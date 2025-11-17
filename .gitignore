@@ -1,0 +1,117 @@
+# ======================
+# Sistema operacional
+# ======================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# ======================
+# Arquivos de ambiente / sensíveis
+# ======================
+.env
+.env.*.local
+.env.local
+.env.*.secret
+*.key
+*.pem
+
+# ======================
+# Logs / temporários
+# ======================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+
+# ======================
+# IDEs / Editor configs
+# ======================
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# ======================
+# Node.js / JavaScript
+# ======================
+node_modules/
+dist/
+build/
+.cache/
+.next/
+.nuxt/
+.out/
+# lockfile se quiser ignorar (opcional)
+# package-lock.json
+# yarn.lock
+
+# ======================
+# Python
+# ======================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+env/
+venv/
+.venv/
+pip-log.txt
+*.egg-info/
+dist/
+build/
+
+# ======================
+# Go
+# ======================
+bin/
+pkg/
+*.exe
+*.exe~
+*.test
+
+# ======================
+# Java / Maven / Gradle
+# ======================
+*.class
+*.jar
+*.war
+target/
+build/
+
+# ======================
+# Compilados / artefatos
+# ======================
+*.o
+*.so
+*.a
+*.out
+
+# ======================
+# Arquivos de containers / configs
+# ======================
+docker-compose.override.yml
+.env.docker
+
+# ======================
+# Outros úteis
+# ======================
+coverage/
+coverage-final.json
+reports/
+.idea_modules/
+*.log
