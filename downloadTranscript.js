@@ -20,35 +20,15 @@ function vttToVimeoStyle(vtt) {
 
     if (!trimmed) continue;
     if (trimmed === "WEBVTT") continue;
-    if (/^\d+$/.test(trimmed)) continue; // número da cue
-    if (/^\d{2}:\d{2}:\d{2}\.\d{3}/.test(trimmed)) continue; // timestamp
+    if (/^\d+$/.test(trimmed)) continue;
+    if (/^\d{2}:\d{2}:\d{2}\.\d{3}/.test(trimmed)) continue;
 
     rawText.push(trimmed);
   }
 
-  const fullText = rawText.join(" ");
-
-  let pieces = fullText
-    .split(".")
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
-
-  const seen = new Set();
-  const unique = [];
-
-  for (const p of pieces) {
-    if (!seen.has(p.toLowerCase())) {
-      seen.add(p.toLowerCase());
-      unique.push(p);
-    }
-  }
-
-  return unique.map((p) => p + ".").join("\n");
+  return rawText.join(" ");
 }
 
-/**
- * Buscar transcrições via API Vimeo
- */
 async function downloadTranscript(videoUrl) {
   const videoId = extractVideoId(videoUrl);
   if (!videoId) {
@@ -59,37 +39,44 @@ async function downloadTranscript(videoUrl) {
   const apiUrl = `https://api.vimeo.com/videos/${videoId}/texttracks`;
 
   const response = await fetch(apiUrl, {
-    headers: {
-      Authorization: `Bearer ${process.env.VIMEO_TOKEN}`,
-    },
+    headers: { Authorization: `Bearer ${process.env.VIMEO_TOKEN}` },
   });
 
   const data = await response.json();
 
-  if (data.error) {
-    console.error(" Erro:", data);
-    return;
-  }
+  console.log(JSON.stringify(data, null, 2));
 
   if (!data.data || data.data.length === 0) {
-    console.error(" Nenhuma transcrição encontrada!");
+    console.error("Nenhuma transcrição encontrada!");
     return;
   }
 
-  const track = data.data[0];
-  const vttUrl = track.link;
+  let track =
+    data.data.find((t) => t.language === "pt-BR") ||
+    data.data.find((t) => t.language === "pt") ||
+    data.data.find((t) => t.language === "pt-x-autogen");
 
-  const vttResponse = await fetch(vttUrl);
+  if (!track) {
+    console.error("Não existe transcrição em português neste vídeo!");
+    return;
+  }
+
+  console.log("Track selecionado:", track.language, track.name);
+
+  const vttResponse = await fetch(track.link);
   const vttText = await vttResponse.text();
 
   const txtFormatted = vttToVimeoStyle(vttText);
 
-  const outputTxt = `transcript-${videoId}.txt`;
-  const outputVtt = `transcript-${videoId}.vtt`;
+  const outputTxt = `transcript-${videoId}-${track.language}.txt`;
+  const outputVtt = `transcript-${videoId}-${track.language}.vtt`;
 
   fs.writeFileSync(outputVtt, vttText);
   fs.writeFileSync(outputTxt, txtFormatted);
+
+  console.log("Transcrição salva em:");
+  console.log("→", outputTxt);
+  console.log("→", outputVtt);
 }
 
-// Executa via CLI
 downloadTranscript(process.argv[2]);
