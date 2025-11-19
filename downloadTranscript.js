@@ -52,12 +52,19 @@ async function downloadTranscript(videoUrl) {
   }
 
   let track =
+    // Português
     data.data.find((t) => t.language === "pt-BR") ||
     data.data.find((t) => t.language === "pt") ||
-    data.data.find((t) => t.language === "pt-x-autogen");
+    data.data.find((t) => t.language === "pt-x-autogen") ||
+    // Espanhol
+    data.data.find((t) => t.language === "es") ||
+    data.data.find((t) => t.language === "es-ES") ||
+    data.data.find((t) => t.language === "es-x-autogen");
 
   if (!track) {
-    console.error("Não existe transcrição em português neste vídeo!");
+    console.error(
+      "Não existe transcrição em português ou espanhol neste vídeo!"
+    );
     return;
   }
 
