@@ -22,6 +22,8 @@ const generateQA = async (context, question) => {
     const model = new ChatOpenAI({
       modelName: "gpt-4o-mini", // ou "gpt-3.5-turbo"
       temperature: 0.7, // Criatividade moderada
+      apiKey:
+        "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",
     });
 
     // 3. Criar o Prompt
