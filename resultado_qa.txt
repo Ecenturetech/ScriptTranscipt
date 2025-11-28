@@ -1,0 +1,51 @@
+P: ¿Dónde se encuentra el campo agrícola mencionado en el texto?  
+R: El campo agrícola se encuentra en la cle al oeste de Katri en la pampa.  
+---
+
+P: ¿Desde cuándo está en agricultura continua el campo agrícola?  
+R: El campo está en agricultura continua desde hace varios años, aunque no se especifica el año exacto.  
+---
+
+P: ¿Qué tipo de manejo se utiliza en el campo?  
+R: Se utiliza un manejo por sitio específico de la agricultura, con rotación y cultivo de servicio.  
+---
+
+P: ¿Con quién está asociada la empresa que gestiona el campo?  
+R: La empresa que gestiona el campo siembra asociada a la art trigo.  
+---
+
+P: ¿Qué tipo de plataformas han probado en el campo?  
+R: Han probado distintas plataformas para optimizar el rendimiento de cada sector del campo y manejar la heterogeneidad de ambientes.  
+---
+
+P: ¿Qué tipo de equipos han incorporado en su trabajo agrícola?  
+R: Han incorporado cosechadoras y sembradoras en su trabajo agrícola.  
+---
+
+P: ¿Cómo se realiza el monitoreo de los lotes?  
+R: Se utiliza una imagen antes de ir al lote para hacer énfasis en un sitio u otro, dependiendo de lo que se va a sembrar, como en el caso del maíz, donde se usa densidad variable por ambiente.  
+---
+
+P: ¿Qué hacen cuando tienen problemas puntuales de maleza?  
+R: Realizan prescripciones de pulverización con la plataforma y aplican solo en los sitios problemáticos.  
+---
+
+P: ¿Cómo manejan la fertilidad del suelo en relación a la siembra?  
+R: Usan la misma prescripción de siembra y ajustan las dosis de fertilidad de acuerdo al sitio.  
+---
+
+P: ¿Qué se registra durante la cosecha?  
+R: Se registran los mapas de rendimiento que luego se utilizan en la oficina o se comparten con el equipo.  
+---
+
+P: ¿Cómo ha mejorado la relación con los contratistas a través de la plataforma?  
+R: Con el tiempo, los contratistas se han afianzado en la plataforma, lo que ha mejorado el vínculo y el trabajo en conjunto.  
+---
+
+P: ¿Qué facilidad ha encontrado el equipo en el uso de la plataforma?  
+R: La plataforma es fácil de manejar, permitiendo al equipo cambiar prescripciones sin esperar a nadie y analizar mapas de rendimiento rápidamente.  
+---
+
+P: ¿Qué ha caracterizado la experiencia con la plataforma Philio en comparación con otras?  
+R: La característica principal de la plataforma Philio es su sencillez, lo que ha facilitado el manejo de la variabilidad en la agricultura.  
+---

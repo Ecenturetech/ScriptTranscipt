@@ -1,7 +1,7 @@
 import fetch from "node-fetch";
 import fs from "fs";
 import dotenv from "dotenv";
-
+import generateQA from "./ai_qa_generator.js";
 dotenv.config();
 
 function extractVideoId(url) {
@@ -86,4 +86,6 @@ async function downloadTranscript(videoUrl) {
   console.log("→", outputVtt);
 }
 
-downloadTranscript(process.argv[2]);
+// downloadTranscript(process.argv[2]);
+
+generateQA();
