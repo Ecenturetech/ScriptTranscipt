@@ -115,3 +115,8 @@ coverage-final.json
 reports/
 .idea_modules/
 *.log
+
+# ======================
+# Arquivos gerados
+# ======================
+storage/

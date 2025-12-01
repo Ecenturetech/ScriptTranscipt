@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcrição de Vídeos Vimeo</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎬 Transcrição de Vídeos Vimeo</h1>
+            <p class="subtitle">Gere transcrições aprimoradas e Q&A automaticamente</p>
+        </header>
+
+        <main>
+            <form id="transcribeForm" class="form-container">
+                <div class="input-group">
+                    <label for="videoUrl">URL do Vídeo Vimeo</label>
+                    <input 
+                        type="url" 
+                        id="videoUrl" 
+                        name="videoUrl" 
+                        placeholder="https://vimeo.com/123456789"
+                        required
+                    >
+                </div>
+
+                <button type="submit" id="submitBtn" class="btn-primary">
+                    <span class="btn-text">Processar Transcrição</span>
+                    <span class="btn-loader" style="display: none;">⏳ Processando...</span>
+                </button>
+            </form>
+
+            <div id="status" class="status-message" style="display: none;"></div>
+
+            <div id="results" class="results-container" style="display: none;">
+                <h2>✅ Arquivos Gerados</h2>
+                <ul id="filesList" class="files-list"></ul>
+            </div>
+        </main>
+
+        <footer>
+            <p>Desenvolvido para transcrição e análise de vídeos</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+
