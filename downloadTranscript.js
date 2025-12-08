@@ -37,17 +37,14 @@ function vttToVimeoStyle(vtt) {
 }
 
 function getStoragePath() {
-  // Obter data atual no formato YYYY-MM-DD
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   const dateFolder = `${year}-${month}-${day}`;
   
-  // Criar caminho: storage/YYYY-MM-DD
   const storagePath = path.join(__dirname, 'storage', dateFolder);
   
-  // Criar pasta se não existir
   if (!fs.existsSync(storagePath)) {
     fs.mkdirSync(storagePath, { recursive: true });
     console.log(`📁 Pasta criada: ${storagePath}`);
@@ -72,7 +69,6 @@ async function downloadTranscript(videoUrl) {
 
   const data = await response.json();
 
-  // Verificar se houve erro na API
   if (data.error) {
     const error = data.developer_message || data.error || "Erro ao acessar API do Vimeo";
     console.error("Erro na API:", error);
@@ -110,65 +106,120 @@ async function downloadTranscript(videoUrl) {
 
   const txtFormatted = vttToVimeoStyle(vttText);
 
-  // Obter caminho da pasta de storage com data atual
   const storagePath = getStoragePath();
 
-  // Nomes dos arquivos
   const outputTxtName = `transcript-${videoId}-${track.language}.txt`;
   const outputVttName = `transcript-${videoId}-${track.language}.vtt`;
-  const enhancedName = `transcricaoAprimorada-${videoId}-${track.language}.txt`;
-  const qaName = `resultado_qa-${videoId}-${track.language}.txt`;
-  const enrichedName = `transcricaoProdutos-${videoId}-${track.language}.txt`;
 
-  // Caminhos completos
   const outputTxtPath = path.join(storagePath, outputTxtName);
   const outputVttPath = path.join(storagePath, outputVttName);
-  const enhancedPath = path.join(storagePath, enhancedName);
-  const qaPath = path.join(storagePath, qaName);
-  const enrichedPath = path.join(storagePath, enrichedName);
 
-  // Salvar arquivos
   fs.writeFileSync(outputVttPath, vttText);
-  fs.writeFileSync(outputTxtPath, txtFormatted);
-  fs.writeFileSync(
-    enrichedPath,
-    enrichTranscriptFromCatalog(txtFormatted)
-  );
-
-  console.log("Transcrição salva em:");
-  console.log("→", outputTxtPath);
+  console.log("📄 Arquivo VTT (com timestamps) salvo em:");
   console.log("→", outputVttPath);
 
-  // Gerar transcrição aprimorada automaticamente
-  // IMPORTANTE: Passar o caminho completo do arquivo que acabamos de salvar
+  const tempTxtPath = path.join(storagePath, `temp-transcript-${videoId}.txt`);
+  const tempEnhancedPath = path.join(storagePath, `temp-enhanced-${videoId}.txt`);
+  const tempQAPath = path.join(storagePath, `temp-qa-${videoId}.txt`);
+
+  fs.writeFileSync(tempTxtPath, txtFormatted);
+
+  const enrichedText = enrichTranscriptFromCatalog(txtFormatted);
+
   console.log("\n✨ Iniciando geração de transcrição aprimorada...");
-  await generateEnhancedTranscript(outputTxtPath, enhancedPath);
+  let enhancedText = "";
+  try {
+    await generateEnhancedTranscript(tempTxtPath, tempEnhancedPath);
+    enhancedText = fs.readFileSync(tempEnhancedPath, 'utf-8');
+    console.log("✅ Transcrição aprimorada gerada com sucesso!");
+  } catch (error) {
+    console.error("❌ Erro ao gerar transcrição aprimorada:", error.message);
+    console.error("   Continuando com os outros processos...");
+  }
 
-  // Gerar Q&A automaticamente após baixar a transcrição
-  // IMPORTANTE: Passar o caminho completo do arquivo que acabamos de salvar
   console.log("\n🔄 Iniciando geração de Q&A...");
-  await generateQA(outputTxtPath, qaPath);
+  let qaText = "";
+  try {
+    await generateQA(tempTxtPath, tempQAPath);
+    qaText = fs.readFileSync(tempQAPath, 'utf-8');
+    console.log("✅ Q&A gerado com sucesso!");
+  } catch (error) {
+    console.error("❌ Erro ao gerar Q&A:", error.message);
+    console.error("   Continuando...");
+  }
 
-  // Retornar caminhos relativos para o front-end
+  const consolidatedContent = [
+    "=".repeat(80),
+    "TRANSCRIÇÃO COMPLETA",
+    `Video ID: ${videoId}`,
+    `Idioma: ${track.language}`,
+    `Data: ${new Date().toLocaleString('pt-BR')}`,
+    "=".repeat(80),
+    "",
+    "─".repeat(80),
+    "1. TRANSCRIÇÃO ORIGINAL (sem timestamps)",
+    "─".repeat(80),
+    "",
+    txtFormatted,
+    "",
+    "─".repeat(80),
+    "2. TRANSCRIÇÃO ENRIQUECIDA COM PRODUTOS",
+    "─".repeat(80),
+    "",
+    enrichedText,
+    "",
+  ];
+
+  if (enhancedText) {
+    consolidatedContent.push(
+      "─".repeat(80),
+      "3. TRANSCRIÇÃO APRIMORADA",
+      "─".repeat(80),
+      "",
+      enhancedText,
+      ""
+    );
+  }
+
+  if (qaText) {
+    consolidatedContent.push(
+      "─".repeat(80),
+      "4. PERGUNTAS E RESPOSTAS (Q&A)",
+      "─".repeat(80),
+      "",
+      qaText,
+      ""
+    );
+  }
+
+  consolidatedContent.push("=".repeat(80));
+
+  fs.writeFileSync(outputTxtPath, consolidatedContent.join("\n"));
+  console.log("\n📝 Arquivo consolidado salvo em:");
+  console.log("→", outputTxtPath);
+
+  try {
+    if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath);
+    if (fs.existsSync(tempEnhancedPath)) fs.unlinkSync(tempEnhancedPath);
+    if (fs.existsSync(tempQAPath)) fs.unlinkSync(tempQAPath);
+  } catch (error) {
+    console.warn("⚠️ Aviso: Não foi possível limpar alguns arquivos temporários");
+  }
+
   const relativePath = path.relative(__dirname, storagePath).replace(/\\/g, '/');
   
   return {
     success: true,
     files: [
       `${relativePath}/${outputTxtName}`,
-      `${relativePath}/${outputVttName}`,
-      `${relativePath}/${enrichedName}`,
-      `${relativePath}/${enhancedName}`,
-      `${relativePath}/${qaName}`
+      `${relativePath}/${outputVttName}`
     ],
     storagePath: relativePath
   };
 }
 
-// Exportar para uso no servidor
 export { downloadTranscript };
 
-// Executar via linha de comando se chamado diretamente
 if (process.argv[1] && process.argv[1].includes('downloadTranscript.js')) {
   downloadTranscript(process.argv[2]).catch(console.error);
 }

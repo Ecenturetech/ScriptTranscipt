@@ -7,22 +7,17 @@ const generateQA = async (inputFile = "./transcript_doc.txt", outputFile = "resu
   try {
     console.log("🔄 Iniciando o processo...");
 
-    // 1. Carregar o arquivo de texto
     const fullText = fs.readFileSync(inputFile, 'utf-8');
 
     console.log(`📄 Texto carregado. Tamanho: ${fullText.length} caracteres.`);
 
-    // 2. Configurar o Modelo (LLM)
-    // Usamos o gpt-3.5-turbo ou gpt-4o-mini por serem rápidos e baratos
     const model = new ChatOpenAI({
-      modelName: "gpt-4o-mini", // ou "gpt-3.5-turbo"
-      temperature: 0.7, // Criatividade moderada
+      modelName: "gpt-4o-mini",
+      temperature: 0.7,
       apiKey:
-        "chave da openai",
+        "openai-api-key",
     });
 
-    // 3. Criar o Prompt
-    // Instruímos a IA sobre como formatar a saída
     const template = `
       Você é um assistente educacional especialista.
       Sua tarefa é ler o texto abaixo e gerar um conjunto de Perguntas e Respostas (Q&A) detalhadas baseadas APENAS nesse texto.
@@ -40,23 +35,19 @@ const generateQA = async (inputFile = "./transcript_doc.txt", outputFile = "resu
 
     const prompt = PromptTemplate.fromTemplate(template);
 
-    // 4. Criar a Cadeia (Chain) usando LCEL
-    // Prompt -> Modelo -> Parser de String
     const chain = prompt.pipe(model).pipe(new StringOutputParser());
 
     console.log("🧠 Gerando perguntas e respostas...");
 
-    // 5. Executar a cadeia
     const result = await chain.invoke({
       text: fullText,
     });
 
-    // 6. Salvar o resultado em um arquivo .txt
     fs.writeFileSync(outputFile, result);
 
     console.log(`✅ Sucesso! O arquivo "${outputFile}" foi gerado.`);
     console.log("\n--- Prévia do Resultado ---\n");
-    console.log(result.slice(0, 200) + "..."); // Mostra o começo do resultado
+    console.log(result.slice(0, 200) + "...");
   } catch (error) {
     console.error("Erro ao gerar pergunta e resposta:", error);
     return null;
@@ -67,10 +58,8 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
   try {
     console.log("🔄 Iniciando aprimoramento da transcrição...");
 
-    // 1. Carregar o arquivo de texto original
     const fullText = fs.readFileSync(inputFile, 'utf-8');
 
-    // 2. Carregar o arquivo de exemplo como referência
     let exampleText = "";
     try {
       exampleText = fs.readFileSync("./ExemploTranscricaoMelhorada.txt", 'utf-8');
@@ -81,15 +70,13 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
 
     console.log(`📄 Texto carregado. Tamanho: ${fullText.length} caracteres.`);
 
-    // 3. Configurar o Modelo (LLM)
     const model = new ChatOpenAI({
       modelName: "gpt-4o-mini",
-      temperature: 0.3, // Menor temperatura para manter fidelidade ao conteúdo
+      temperature: 0.3,
       apiKey:
-        "chave da openai",
+        "openai-api-key",
     });
 
-    // 4. Criar o Prompt para transcrição aprimorada com exemplo
     let template = `
       Você é um especialista em transcrições e formatação de conteúdo.
       
@@ -107,9 +94,7 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
       9. Cada fala do mesmo falante deve estar em uma linha separada com o formato: [Nome do Falante]: [Texto]
     `;
 
-    // Adicionar exemplo se disponível
     if (exampleText) {
-      // Pegar apenas a parte da transcrição melhorada (até a linha com "🔍 Perguntas")
       const exampleLines = exampleText.split('\n');
       const exampleTranscript = [];
       for (const line of exampleLines) {
@@ -138,17 +123,14 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
 
     const prompt = PromptTemplate.fromTemplate(template);
 
-    // 4. Criar a Cadeia (Chain) usando LCEL
     const chain = prompt.pipe(model).pipe(new StringOutputParser());
 
     console.log("✨ Gerando transcrição aprimorada...");
 
-    // 5. Executar a cadeia
     const result = await chain.invoke({
       text: fullText,
     });
 
-    // 6. Salvar o resultado em um arquivo .txt
     fs.writeFileSync(outputFile, result);
 
     console.log(`✅ Sucesso! O arquivo "${outputFile}" foi gerado.`);

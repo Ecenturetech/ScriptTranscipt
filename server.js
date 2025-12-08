@@ -18,7 +18,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Rota para processar a transcrição
 app.post('/api/transcribe', async (req, res) => {
   try {
     const { videoUrl } = req.body;
@@ -30,7 +29,6 @@ app.post('/api/transcribe', async (req, res) => {
       });
     }
 
-    // Validar URL do Vimeo
     if (!videoUrl.includes('vimeo.com')) {
       return res.status(400).json({ 
         success: false, 
@@ -38,7 +36,6 @@ app.post('/api/transcribe', async (req, res) => {
       });
     }
 
-    // Executar o download da transcrição
     const result = await downloadTranscript(videoUrl);
 
     if (!result || !result.success) {
@@ -63,14 +60,11 @@ app.post('/api/transcribe', async (req, res) => {
   }
 });
 
-// Rota para fazer download dos arquivos
 app.get('/api/download/:path(*)', (req, res) => {
   try {
-    // Pegar o caminho completo após /api/download/
     const requestedPath = req.params.path || '';
     const fullPath = path.join(__dirname, requestedPath);
 
-    // Verificar se o arquivo existe
     if (!fs.existsSync(fullPath)) {
       return res.status(404).json({ 
         success: false, 
@@ -78,7 +72,6 @@ app.get('/api/download/:path(*)', (req, res) => {
       });
     }
 
-    // Verificar se é um arquivo .txt ou .vtt
     const ext = path.extname(fullPath);
     if (ext !== '.txt' && ext !== '.vtt') {
       return res.status(400).json({ 
@@ -87,10 +80,8 @@ app.get('/api/download/:path(*)', (req, res) => {
       });
     }
 
-    // Obter apenas o nome do arquivo para o download
     const filename = path.basename(fullPath);
 
-    // Enviar o arquivo
     res.download(fullPath, filename, (err) => {
       if (err) {
         console.error('Erro ao fazer download:', err);
