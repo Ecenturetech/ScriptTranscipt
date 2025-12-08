@@ -2,6 +2,9 @@ import { PromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { ChatOpenAI } from '@langchain/openai';
 import fs from 'fs';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const generateQA = async (inputFile = "./transcript_doc.txt", outputFile = "resultado_qa_doc.txt") => {
   try {
@@ -14,8 +17,7 @@ const generateQA = async (inputFile = "./transcript_doc.txt", outputFile = "resu
     const model = new ChatOpenAI({
       modelName: "gpt-4o-mini",
       temperature: 0.7,
-      apiKey:
-        "openai-api-key",
+      apiKey: process.env.OPENAI_API_KEY,
     });
 
     const template = `
@@ -73,8 +75,7 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
     const model = new ChatOpenAI({
       modelName: "gpt-4o-mini",
       temperature: 0.3,
-      apiKey:
-        "openai-api-key",
+      apiKey: process.env.OPENAI_API_KEY,
     });
 
     let template = `
