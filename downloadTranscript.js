@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import generateQA, { generateEnhancedTranscript } from "./ai_qa_generator.js";
+import { enrichTranscriptFromCatalog } from "./culture_enricher.js";
 
 dotenv.config();
 
@@ -117,16 +118,22 @@ async function downloadTranscript(videoUrl) {
   const outputVttName = `transcript-${videoId}-${track.language}.vtt`;
   const enhancedName = `transcricaoAprimorada-${videoId}-${track.language}.txt`;
   const qaName = `resultado_qa-${videoId}-${track.language}.txt`;
+  const enrichedName = `transcricaoProdutos-${videoId}-${track.language}.txt`;
 
   // Caminhos completos
   const outputTxtPath = path.join(storagePath, outputTxtName);
   const outputVttPath = path.join(storagePath, outputVttName);
   const enhancedPath = path.join(storagePath, enhancedName);
   const qaPath = path.join(storagePath, qaName);
+  const enrichedPath = path.join(storagePath, enrichedName);
 
   // Salvar arquivos
   fs.writeFileSync(outputVttPath, vttText);
   fs.writeFileSync(outputTxtPath, txtFormatted);
+  fs.writeFileSync(
+    enrichedPath,
+    enrichTranscriptFromCatalog(txtFormatted)
+  );
 
   console.log("Transcrição salva em:");
   console.log("→", outputTxtPath);
@@ -150,6 +157,7 @@ async function downloadTranscript(videoUrl) {
     files: [
       `${relativePath}/${outputTxtName}`,
       `${relativePath}/${outputVttName}`,
+      `${relativePath}/${enrichedName}`,
       `${relativePath}/${enhancedName}`,
       `${relativePath}/${qaName}`
     ],
