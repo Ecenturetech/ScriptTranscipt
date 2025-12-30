@@ -3,8 +3,12 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import { v4 as uuidv4 } from "uuid";
 import generateQA, { generateEnhancedTranscript } from "./ai_qa_generator.js";
 import { enrichTranscriptFromCatalog } from "./culture_enricher.js";
+import { applyDictionaryReplacements } from "./services/videoTranscription.js";
+import pool from "./db/connection.js";
+import { getStoragePath } from "./utils/storage.js";
 
 dotenv.config();
 
@@ -36,28 +40,10 @@ function vttToVimeoStyle(vtt) {
   return rawText.join(" ");
 }
 
-function getStoragePath() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const dateFolder = `${year}-${month}-${day}`;
-  
-  const storagePath = path.join(__dirname, 'storage', dateFolder);
-  
-  if (!fs.existsSync(storagePath)) {
-    fs.mkdirSync(storagePath, { recursive: true });
-    console.log(`📁 Pasta criada: ${storagePath}`);
-  }
-  
-  return storagePath;
-}
-
 async function downloadTranscript(videoUrl) {
   const videoId = extractVideoId(videoUrl);
   if (!videoId) {
     const error = "URL inválida.";
-    console.error(error);
     return { success: false, error };
   }
 
@@ -71,40 +57,33 @@ async function downloadTranscript(videoUrl) {
 
   if (data.error) {
     const error = data.developer_message || data.error || "Erro ao acessar API do Vimeo";
-    console.error("Erro na API:", error);
     return { success: false, error };
   }
 
-  console.log(JSON.stringify(data, null, 2));
-
   if (!data.data || data.data.length === 0) {
     const error = "Nenhuma transcrição encontrada!";
-    console.error(error);
     return { success: false, error };
   }
 
   let track =
-    // Português
     data.data.find((t) => t.language === "pt-BR") ||
     data.data.find((t) => t.language === "pt") ||
     data.data.find((t) => t.language === "pt-x-autogen") ||
-    // Espanhol
     data.data.find((t) => t.language === "es") ||
     data.data.find((t) => t.language === "es-ES") ||
     data.data.find((t) => t.language === "es-x-autogen");
 
   if (!track) {
     const error = "Não existe transcrição em português ou espanhol neste vídeo!";
-    console.error(error);
     return { success: false, error };
   }
-
-  console.log("Track selecionado:", track.language, track.name);
 
   const vttResponse = await fetch(track.link);
   const vttText = await vttResponse.text();
 
-  const txtFormatted = vttToVimeoStyle(vttText);
+  let txtFormatted = vttToVimeoStyle(vttText);
+  
+  txtFormatted = await applyDictionaryReplacements(txtFormatted);
 
   const storagePath = getStoragePath();
 
@@ -115,8 +94,6 @@ async function downloadTranscript(videoUrl) {
   const outputVttPath = path.join(storagePath, outputVttName);
 
   fs.writeFileSync(outputVttPath, vttText);
-  console.log("📄 Arquivo VTT (com timestamps) salvo em:");
-  console.log("→", outputVttPath);
 
   const tempTxtPath = path.join(storagePath, `temp-transcript-${videoId}.txt`);
   const tempEnhancedPath = path.join(storagePath, `temp-enhanced-${videoId}.txt`);
@@ -124,28 +101,25 @@ async function downloadTranscript(videoUrl) {
 
   fs.writeFileSync(tempTxtPath, txtFormatted);
 
-  const enrichedText = enrichTranscriptFromCatalog(txtFormatted);
+  let enrichedText = enrichTranscriptFromCatalog(txtFormatted);
+  enrichedText = await applyDictionaryReplacements(enrichedText);
 
-  console.log("\n✨ Iniciando geração de transcrição aprimorada...");
   let enhancedText = "";
   try {
     await generateEnhancedTranscript(tempTxtPath, tempEnhancedPath);
     enhancedText = fs.readFileSync(tempEnhancedPath, 'utf-8');
-    console.log("✅ Transcrição aprimorada gerada com sucesso!");
+    enhancedText = await applyDictionaryReplacements(enhancedText);
   } catch (error) {
-    console.error("❌ Erro ao gerar transcrição aprimorada:", error.message);
-    console.error("   Continuando com os outros processos...");
+    console.error("Erro ao gerar transcrição aprimorada:", error.message);
   }
 
-  console.log("\n🔄 Iniciando geração de Q&A...");
   let qaText = "";
   try {
     await generateQA(tempTxtPath, tempQAPath);
     qaText = fs.readFileSync(tempQAPath, 'utf-8');
-    console.log("✅ Q&A gerado com sucesso!");
+    qaText = await applyDictionaryReplacements(qaText);
   } catch (error) {
-    console.error("❌ Erro ao gerar Q&A:", error.message);
-    console.error("   Continuando...");
+    console.error("Erro ao gerar Q&A:", error.message);
   }
 
   const consolidatedContent = [
@@ -195,26 +169,53 @@ async function downloadTranscript(videoUrl) {
   consolidatedContent.push("=".repeat(80));
 
   fs.writeFileSync(outputTxtPath, consolidatedContent.join("\n"));
-  console.log("\n📝 Arquivo consolidado salvo em:");
-  console.log("→", outputTxtPath);
 
   try {
     if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath);
     if (fs.existsSync(tempEnhancedPath)) fs.unlinkSync(tempEnhancedPath);
     if (fs.existsSync(tempQAPath)) fs.unlinkSync(tempQAPath);
   } catch (error) {
-    console.warn("⚠️ Aviso: Não foi possível limpar alguns arquivos temporários");
+    // Silenciosamente ignora erros de limpeza
   }
 
   const relativePath = path.relative(__dirname, storagePath).replace(/\\/g, '/');
   
+  let videoId_db = null;
+  try {
+    const videoId_db_uuid = uuidv4();
+    const fileName = `transcript-${videoId}-${track.language}.txt`;
+    
+    await pool.query(
+      `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        videoId_db_uuid,
+        fileName,
+        'vimeo',
+        videoUrl,
+        'completed',
+        txtFormatted,
+        enhancedText || null,
+        qaText || null
+      ]
+    );
+    
+    videoId_db = videoId_db_uuid;
+  } catch (error) {
+    console.error("Erro ao salvar no banco de dados:", error.message);
+  }
+  
   return {
     success: true,
+    videoId: videoId_db,
     files: [
       `${relativePath}/${outputTxtName}`,
       `${relativePath}/${outputVttName}`
     ],
-    storagePath: relativePath
+    storagePath: relativePath,
+    transcript: txtFormatted,
+    structuredTranscript: enhancedText || null,
+    questionsAnswers: qaText || null
   };
 }
 
