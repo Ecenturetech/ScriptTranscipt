@@ -4,7 +4,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 const router = express.Router();
 
-// GET /api/dictionary - Listar todos os termos
 router.get('/', async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -24,7 +23,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/dictionary/:id - Buscar termo por ID
 router.get('/:id', async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -48,7 +46,6 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/dictionary - Criar novo termo
 router.post('/', async (req, res) => {
   try {
     const { term, replacement } = req.body;
@@ -73,7 +70,7 @@ router.post('/', async (req, res) => {
       replacement: row.replacement
     });
   } catch (error) {
-    if (error.code === '23505') { // PostgreSQL unique violation
+    if (error.code === '23505') {
       return res.status(409).json({ error: 'Termo já existe no dicionário' });
     }
     console.error('Erro ao criar termo:', error);
@@ -81,7 +78,6 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/dictionary/:id - Atualizar termo
 router.put('/:id', async (req, res) => {
   try {
     const { term, replacement } = req.body;
@@ -123,7 +119,7 @@ router.put('/:id', async (req, res) => {
       replacement: row.replacement
     });
   } catch (error) {
-    if (error.code === '23505') { // PostgreSQL unique violation
+    if (error.code === '23505') {
       return res.status(409).json({ error: 'Termo já existe no dicionário' });
     }
     console.error('Erro ao atualizar termo:', error);
@@ -131,7 +127,6 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/dictionary/:id - Deletar termo
 router.delete('/:id', async (req, res) => {
   try {
     const { rowCount } = await pool.query('DELETE FROM dictionary_terms WHERE id = $1', [req.params.id]);

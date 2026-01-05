@@ -17,9 +17,8 @@ if (!process.env.OPENAI_API_KEY) {
 }
 
 /**
- * Busca os prompts do banco de dados
  * @returns {Promise<{transcriptPrompt: string, qaPrompt: string, additionalPrompt: string}>}
- * @throws {Error} Se não conseguir buscar os prompts do banco
+ * @throws {Error}
  */
 async function getPromptsFromDatabase() {
   const { rows } = await pool.query('SELECT * FROM settings WHERE id = 1');
@@ -39,7 +38,6 @@ const generateQA = async (inputFile = "./transcript_doc.txt", outputFile = "resu
   try {
     const fullText = fs.readFileSync(inputFile, 'utf-8');
     
-    // Buscar prompt do banco de dados
     const prompts = await getPromptsFromDatabase();
     
     if (!prompts.qaPrompt || prompts.qaPrompt.trim() === '') {
@@ -51,7 +49,6 @@ const generateQA = async (inputFile = "./transcript_doc.txt", outputFile = "resu
       temperature: 0.7,
     });
 
-    // Usar o prompt do banco de dados
     const template = prompts.qaPrompt.includes('{text}') 
       ? prompts.qaPrompt 
       : `${prompts.qaPrompt}\n\nTexto base:\n"{text}"\n\nGere o Q&A agora e utilize a língua do texto original:`;
@@ -75,7 +72,6 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
   try {
     const fullText = fs.readFileSync(inputFile, 'utf-8');
     
-    // Buscar prompt do banco de dados
     const prompts = await getPromptsFromDatabase();
     
     if (!prompts.transcriptPrompt || prompts.transcriptPrompt.trim() === '') {
@@ -86,7 +82,6 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
     try {
       exampleText = fs.readFileSync("./ExemploTranscricaoMelhorada.txt", 'utf-8');
     } catch (error) {
-      // Usa instruções padrão se o exemplo não for encontrado
     }
 
     const model = new ChatOpenAI({
@@ -94,15 +89,11 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
       temperature: 0.3,
     });
 
-    // Se o prompt do banco já contém {text}, usar diretamente
-    // Caso contrário, construir o template com o exemplo
     let template = '';
     
     if (prompts.transcriptPrompt.includes('{text}')) {
-      // O prompt do banco já está formatado com {text}
       template = prompts.transcriptPrompt;
     } else {
-      // Construir template com o prompt do banco + exemplo
       template = `
       Você é um especialista em transcrições e formatação de conteúdo.
       

@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { processVideoFile } from './videoTranscription.js';
+import { processPDFFile } from './pdfProcessing.js';
 import { downloadTranscript } from '../downloadTranscript.js';
 
 class TranscriptionQueue extends EventEmitter {
@@ -10,17 +11,12 @@ class TranscriptionQueue extends EventEmitter {
     this.currentJob = null;
   }
 
-  /**
-   * Adiciona um job à fila
-   * @param {Object} job - { type: 'upload' | 'url', data: { filePath, fileName } | { videoUrl }, jobId }
-   * @returns {string} jobId
-   */
   addJob(job) {
     const jobId = job.jobId || `job-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
     
     const queueJob = {
       id: jobId,
-      type: job.type, // 'upload' ou 'url'
+      type: job.type,
       data: job.data,
       status: 'pending',
       createdAt: new Date(),
@@ -32,26 +28,21 @@ class TranscriptionQueue extends EventEmitter {
 
     this.queue.push(queueJob);
 
-    // Emitir evento de job adicionado
     this.emit('jobAdded', queueJob);
-
-    // Iniciar processamento se não estiver processando
     if (!this.processing) {
-      this.processNext();
+      setImmediate(() => {
+        this.processNext();
+      });
     }
 
     return jobId;
   }
 
-  /**
-   * Processa o próximo job da fila
-   */
   async processNext() {
-    if (this.processing || this.queue.length === 0) {
+    if (this.processing) {
       return;
     }
 
-    this.processing = true;
     const job = this.queue.find(j => j.status === 'pending');
 
     if (!job) {
@@ -59,11 +50,14 @@ class TranscriptionQueue extends EventEmitter {
       return;
     }
 
+    this.processing = true;
     this.currentJob = job;
     job.status = 'processing';
     job.startedAt = new Date();
     
     this.emit('jobStarted', job);
+
+    console.log(`🔄 Processando job ${job.id} (${job.type}) - ${this.queue.filter(j => j.status === 'pending').length} pendente(s)`);
 
     try {
       let result;
@@ -74,6 +68,9 @@ class TranscriptionQueue extends EventEmitter {
       } else if (job.type === 'url') {
         const { videoUrl } = job.data;
         result = await downloadTranscript(videoUrl);
+      } else if (job.type === 'pdf') {
+        const { filePath, fileName } = job.data;
+        result = await processPDFFile(filePath, fileName);
       } else {
         throw new Error(`Tipo de job desconhecido: ${job.type}`);
       }
@@ -82,6 +79,7 @@ class TranscriptionQueue extends EventEmitter {
       job.completedAt = new Date();
       job.result = result;
       
+      console.log(`✅ Job ${job.id} concluído com sucesso`);
       this.emit('jobCompleted', job);
 
     } catch (error) {
@@ -95,16 +93,12 @@ class TranscriptionQueue extends EventEmitter {
       this.currentJob = null;
       this.processing = false;
       
-      // Processar próximo job
-      setTimeout(() => {
+      setImmediate(() => {
         this.processNext();
-      }, 1000); // Pequeno delay entre jobs
+      });
     }
   }
 
-  /**
-   * Retorna o status de um job específico
-   */
   getJobStatus(jobId) {
     const job = this.queue.find(j => j.id === jobId);
     if (!job) {
@@ -122,14 +116,12 @@ class TranscriptionQueue extends EventEmitter {
       result: job.result ? {
         success: job.result.success,
         videoId: job.result.videoId,
+        pdfId: job.result.pdfId,
         message: job.result.message
       } : null
     };
   }
 
-  /**
-   * Retorna o status de todos os jobs
-   */
   getAllJobsStatus() {
     return this.queue.map(job => ({
       id: job.id,
@@ -143,9 +135,6 @@ class TranscriptionQueue extends EventEmitter {
     }));
   }
 
-  /**
-   * Retorna informações sobre a fila
-   */
   getQueueInfo() {
     const pending = this.queue.filter(j => j.status === 'pending').length;
     const processing = this.queue.filter(j => j.status === 'processing').length;
@@ -166,9 +155,6 @@ class TranscriptionQueue extends EventEmitter {
     };
   }
 
-  /**
-   * Remove jobs antigos (opcional, para limpeza)
-   */
   cleanup(olderThanHours = 24) {
     const cutoff = new Date();
     cutoff.setHours(cutoff.getHours() - olderThanHours);
@@ -186,7 +172,6 @@ class TranscriptionQueue extends EventEmitter {
   }
 }
 
-// Singleton
 const queue = new TranscriptionQueue();
 
 export default queue;

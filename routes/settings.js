@@ -3,7 +3,6 @@ import pool from '../db/connection.js';
 
 const router = express.Router();
 
-// GET /api/settings - Buscar configurações
 router.get('/', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM settings WHERE id = 1');
@@ -26,7 +25,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// PUT /api/settings - Atualizar configurações
 router.put('/', async (req, res) => {
   try {
     const { transcriptPrompt, qaPrompt, additionalPrompt } = req.body;

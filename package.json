@@ -15,6 +15,8 @@
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^3.3.2",
     "openai": "^6.15.0",
+    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^4.0.379",
     "pg": "^8.11.3",
     "uuid": "^9.0.1"
   },
@@ -22,6 +24,12 @@
     "dev": "node --watch server.js",
     "start": "node server.js",
     "init-db": "node scripts/initDatabase.js",
-    "migrate": "node scripts/insertPrompts.js"
+    "migrate": "node scripts/insertPrompts.js",
+    "test-pdf": "node testPdfTranscription.js"
+  },
+  "overrides": {
+    "@browserbasehq/stagehand": {
+      "openai": "$openai"
+    }
   }
 }

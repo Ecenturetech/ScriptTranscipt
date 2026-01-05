@@ -19,18 +19,12 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-/**
- * Aplica as substituições do dicionário no texto
- * @param {string} text - Texto a ser processado
- * @returns {Promise<string>} - Texto com substituições aplicadas
- */
 export async function applyDictionaryReplacements(text) {
   try {
     if (!text || typeof text !== 'string') {
       return text;
     }
 
-    // Buscar todos os termos do dicionário
     const { rows } = await pool.query(
       'SELECT term, replacement FROM dictionary_terms ORDER BY LENGTH(term) DESC'
     );
@@ -41,17 +35,13 @@ export async function applyDictionaryReplacements(text) {
     
     let processedText = text;
     
-    // Aplicar substituições (ordenadas por tamanho para evitar substituições parciais)
     for (const { term, replacement } of rows) {
       if (!term || !replacement) {
         continue;
       }
 
-      // Escapar caracteres especiais do termo para uso em regex
       const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       
-      // Usar regex com palavra completa (case-insensitive)
-      // \b é limite de palavra, funciona mesmo com pontuação
       const regex = new RegExp(`\\b${escapedTerm}\\b`, 'gi');
       processedText = processedText.replace(regex, replacement);
     }
@@ -60,7 +50,6 @@ export async function applyDictionaryReplacements(text) {
   } catch (error) {
     console.error('Erro ao aplicar substituições do dicionário:', error);
     console.error('Stack:', error.stack);
-    // Em caso de erro, retornar o texto original
     return text;
   }
 }
@@ -135,7 +124,6 @@ export async function processVideoFile(filePath, fileName) {
         throw new Error('Transcrição retornou vazia');
       }
       
-      // Aplicar substituições do dicionário
       transcriptText = await applyDictionaryReplacements(transcriptText);
       
       await pool.query(
@@ -211,7 +199,6 @@ export async function processVideoTranscript(videoId, transcriptText) {
       if (fs.existsSync(tempEnhancedPath)) fs.unlinkSync(tempEnhancedPath);
       if (fs.existsSync(tempQAPath)) fs.unlinkSync(tempQAPath);
     } catch (error) {
-      // Silenciosamente ignora erros de limpeza
     }
     
     return {

@@ -6,13 +6,11 @@ import { dirname } from 'path';
 
 const { Pool } = pkg;
 
-// Carregar .env
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const envPath = resolve(__dirname, '../.env');
 dotenv.config({ path: envPath });
 
-// Garantir que as variáveis sejam strings
 const DB_HOST = String(process.env.DB_HOST || 'localhost');
 const DB_PORT = parseInt(process.env.DB_PORT || '5432');
 const DB_USER = String(process.env.DB_USER || 'root');
@@ -30,7 +28,6 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
-// Testar conexão
 pool.query('SELECT NOW()')
   .then(() => {
     console.log('✅ Conectado ao banco de dados PostgreSQL');

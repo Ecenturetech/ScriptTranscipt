@@ -9,6 +9,7 @@ import { downloadTranscript } from './downloadTranscript.js';
 import { processVideoFile } from './services/videoTranscription.js';
 import queue from './services/queue.js';
 import videoRoutes from './routes/videos.js';
+import pdfRoutes from './routes/pdfs.js';
 import settingsRoutes from './routes/settings.js';
 import dictionaryRoutes from './routes/dictionary.js';
 import { getStoragePath } from './utils/storage.js';
@@ -63,7 +64,6 @@ const upload = multer({
   }
 });
 
-// Upload múltiplo para suportar até 5 arquivos
 const uploadMultiple = multer({
   storage: storage,
   limits: {
@@ -89,6 +89,7 @@ const uploadMultiple = multer({
 });
 
 app.use('/api/videos', videoRoutes);
+app.use('/api/pdfs', pdfRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/dictionary', dictionaryRoutes);
 
@@ -96,12 +97,10 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'API está funcionando' });
 });
 
-// Endpoint para adicionar URL(s) à fila
 app.post('/api/transcribe', async (req, res) => {
   try {
     const { videoUrl, videoUrls } = req.body;
 
-    // Suporta tanto uma URL quanto múltiplas URLs
     const urls = videoUrls && Array.isArray(videoUrls) ? videoUrls : (videoUrl ? [videoUrl] : []);
 
     if (urls.length === 0) {
@@ -118,7 +117,6 @@ app.post('/api/transcribe', async (req, res) => {
       });
     }
 
-    // Validar todas as URLs
     for (const url of urls) {
       if (!url || typeof url !== 'string') {
         return res.status(400).json({ 
@@ -134,7 +132,6 @@ app.post('/api/transcribe', async (req, res) => {
       }
     }
 
-    // Adicionar cada URL como um job na fila
     const jobIds = [];
     for (const url of urls) {
       const jobId = queue.addJob({
@@ -160,7 +157,6 @@ app.post('/api/transcribe', async (req, res) => {
   }
 });
 
-// Endpoint para upload único (mantido para compatibilidade)
 app.post('/api/transcribe/upload', upload.single('video'), async (req, res) => {
   try {
     if (!req.file) {
@@ -170,7 +166,6 @@ app.post('/api/transcribe/upload', upload.single('video'), async (req, res) => {
       });
     }
 
-    // Adicionar à fila
     const jobId = queue.addJob({
       type: 'upload',
       data: {
@@ -205,7 +200,21 @@ app.post('/api/transcribe/upload', upload.single('video'), async (req, res) => {
   }
 });
 
-// Endpoint para upload múltiplo (até 5 arquivos)
+const uploadPDFMultiple = multer({
+  storage: storage,
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB
+    files: 5
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Tipo de arquivo não suportado. Use PDF.'));
+    }
+  }
+});
+
 app.post('/api/transcribe/upload-multiple', uploadMultiple.array('videos', 5), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
@@ -222,7 +231,6 @@ app.post('/api/transcribe/upload-multiple', uploadMultiple.array('videos', 5), a
       });
     }
 
-    // Adicionar cada arquivo à fila
     const jobIds = [];
     for (const file of req.files) {
       const jobId = queue.addJob({
@@ -246,7 +254,6 @@ app.post('/api/transcribe/upload-multiple', uploadMultiple.array('videos', 5), a
     console.error('Erro ao adicionar uploads à fila:', error);
     console.error('   Stack:', error.stack);
     
-    // Limpar arquivos em caso de erro
     if (req.files) {
       for (const file of req.files) {
         if (fs.existsSync(file.path)) {
@@ -266,7 +273,6 @@ app.post('/api/transcribe/upload-multiple', uploadMultiple.array('videos', 5), a
   }
 });
 
-// Endpoints para gerenciar a fila
 app.get('/api/queue/status', (req, res) => {
   try {
     const queueInfo = queue.getQueueInfo();
@@ -358,6 +364,64 @@ app.get('/api/download/:path(*)', (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: error.message || 'Erro ao processar download' 
+    });
+  }
+});
+
+app.post('/api/pdfs/upload-multiple', uploadPDFMultiple.array('pdfs', 5), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Nenhum arquivo enviado' 
+      });
+    }
+
+    if (req.files.length > 5) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Máximo de 5 arquivos por vez' 
+      });
+    }
+
+    const jobIds = [];
+    for (const file of req.files) {
+      const jobId = queue.addJob({
+        type: 'pdf',
+        data: {
+          filePath: file.path,
+          fileName: file.originalname
+        }
+      });
+      jobIds.push(jobId);
+    }
+
+    res.json({ 
+      success: true, 
+      message: `${jobIds.length} PDF(s) adicionado(s) à fila!`,
+      jobIds,
+      queueInfo: queue.getQueueInfo()
+    });
+
+  } catch (error) {
+    console.error('Erro ao adicionar uploads de PDFs à fila:', error);
+    console.error('   Stack:', error.stack);
+    
+    if (req.files) {
+      for (const file of req.files) {
+        if (fs.existsSync(file.path)) {
+          try {
+            fs.unlinkSync(file.path);
+          } catch (cleanupError) {
+            console.error('Erro ao limpar arquivo:', cleanupError);
+          }
+        }
+      }
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Erro ao adicionar uploads de PDFs à fila' 
     });
   }
 });
