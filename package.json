@@ -21,7 +21,7 @@
     "uuid": "^9.0.1"
   },
   "scripts": {
-    "dev": "node --watch server.js",
+    "dev": "nodemon server.js",
     "start": "node server.js",
     "init-db": "node scripts/initDatabase.js",
     "migrate": "node scripts/insertPrompts.js",
@@ -31,5 +31,8 @@
     "@browserbasehq/stagehand": {
       "openai": "$openai"
     }
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
   }
 }

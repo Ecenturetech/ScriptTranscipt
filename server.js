@@ -12,6 +12,7 @@ import videoRoutes from './routes/videos.js';
 import pdfRoutes from './routes/pdfs.js';
 import settingsRoutes from './routes/settings.js';
 import dictionaryRoutes from './routes/dictionary.js';
+import scormRoutes from './routes/scorms.js';
 import { getStoragePath } from './utils/storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -92,6 +93,7 @@ app.use('/api/videos', videoRoutes);
 app.use('/api/pdfs', pdfRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/dictionary', dictionaryRoutes);
+app.use('/api/scorms', scormRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'API está funcionando' });

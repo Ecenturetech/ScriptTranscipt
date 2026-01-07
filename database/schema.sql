@@ -91,3 +91,26 @@ CREATE INDEX IF NOT EXISTS idx_pdfs_created_at ON pdfs(created_at);
 CREATE TRIGGER update_pdfs_updated_at BEFORE UPDATE ON pdfs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- Tabela de SCORMs
+CREATE TABLE IF NOT EXISTS scorms (
+  id VARCHAR(36) PRIMARY KEY,
+  scorm_id VARCHAR(255) NOT NULL,
+  scorm_name VARCHAR(500) NOT NULL,
+  course_path VARCHAR(500) NOT NULL,
+  status status_enum NOT NULL DEFAULT 'processing',
+  extracted_text TEXT,
+  structured_summary TEXT,
+  questions_answers TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Criar índices para SCORMs
+CREATE INDEX IF NOT EXISTS idx_scorms_status ON scorms(status);
+CREATE INDEX IF NOT EXISTS idx_scorms_created_at ON scorms(created_at);
+CREATE INDEX IF NOT EXISTS idx_scorms_scorm_id ON scorms(scorm_id);
+
+-- Trigger para atualizar updated_at automaticamente em SCORMs
+CREATE TRIGGER update_scorms_updated_at BEFORE UPDATE ON scorms
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+

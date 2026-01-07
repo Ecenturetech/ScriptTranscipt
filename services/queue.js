@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { processVideoFile } from './videoTranscription.js';
 import { processPDFFile } from './pdfProcessing.js';
+import { processScormContent } from './scormProcessing.js';
 import { downloadTranscript } from '../downloadTranscript.js';
 
 class TranscriptionQueue extends EventEmitter {
@@ -71,6 +72,9 @@ class TranscriptionQueue extends EventEmitter {
       } else if (job.type === 'pdf') {
         const { filePath, fileName } = job.data;
         result = await processPDFFile(filePath, fileName);
+      } else if (job.type === 'scorm') {
+        const { scormId, scormName, coursePath } = job.data;
+        result = await processScormContent(scormId, scormName, coursePath);
       } else {
         throw new Error(`Tipo de job desconhecido: ${job.type}`);
       }
