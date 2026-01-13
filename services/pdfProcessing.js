@@ -1,10 +1,40 @@
+import '../utils/polyfills.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
 import pdf from 'pdf-parse/lib/pdf-parse.js';
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { createCanvas, Image } from 'canvas';
 import { PromptTemplate } from "@langchain/core/prompts";
+
+if (typeof global.Image === 'undefined') {
+  global.Image = Image;
+}
+
+class NodeCanvasFactory {
+  create(width, height) {
+    const canvas = createCanvas(width, height);
+    const context = canvas.getContext('2d');
+    return {
+      canvas,
+      context,
+    };
+  }
+
+  reset(canvasAndContext, width, height) {
+    canvasAndContext.canvas.width = width;
+    canvasAndContext.canvas.height = height;
+  }
+
+  destroy(canvasAndContext) {
+    canvasAndContext.canvas.width = 0;
+    canvasAndContext.canvas.height = 0;
+    canvasAndContext.canvas = null;
+    canvasAndContext.context = null;
+  }
+}
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { ChatOpenAI } from '@langchain/openai';
 import dotenv from 'dotenv';
@@ -22,9 +52,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-/**
- * Busca os prompts do banco de dados
- */
 async function getPromptsFromDatabase() {
   const { rows } = await pool.query('SELECT * FROM settings WHERE id = 1');
   
@@ -59,6 +86,121 @@ async function extractRawTextFromPDF(filePath) {
     console.error('[PDF] Erro ao extrair texto bruto do PDF:', error);
     console.error('[PDF] Stack:', error.stack);
     throw new Error(`Erro ao extrair texto bruto do PDF: ${error.message}`);
+  }
+}
+
+async function extractTextViaVision(filePath) {
+  try {
+    console.log(`[PDF-VISION] Iniciando extração visual para: ${filePath}`);
+    
+    const data = new Uint8Array(fs.readFileSync(filePath));
+    
+    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+      const workerPath = path.join(__dirname, '../node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs');
+      pdfjs.GlobalWorkerOptions.workerSrc = workerPath;
+    }
+
+    const loadingTask = pdfjs.getDocument({
+      data,
+      isEvalSupported: false,
+      useSystemFonts: true,
+      disableFontFace: true,
+      canvasFactory: new NodeCanvasFactory()
+    });
+    
+    const pdfDocument = await loadingTask.promise;
+    console.log(`[PDF-VISION] PDF carregado. Total de páginas: ${pdfDocument.numPages}`);
+    
+    const images = [];
+    const maxPages = 100;
+    const pagesToProcess = Math.min(pdfDocument.numPages, maxPages);
+
+    for (let i = 1; i <= pagesToProcess; i++) {
+      try {
+        const page = await pdfDocument.getPage(i);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvasFactory = new NodeCanvasFactory();
+        const { canvas, context } = canvasFactory.create(viewport.width, viewport.height);
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport,
+          canvasFactory: canvasFactory
+        }).promise;
+        
+        images.push(canvas.toBuffer('image/png').toString('base64'));
+        if (i % 5 === 0) console.log(`[PDF-VISION] Renderizadas ${i} páginas...`);
+      } catch (pageError) {
+        console.error(`[PDF-VISION] Erro ao renderizar página ${i}:`, pageError);
+      }
+    }
+    
+    if (images.length === 0) {
+      throw new Error('Nenhuma página pôde ser renderizada como imagem.');
+    }
+    
+    console.log(`[PDF-VISION] Renderização concluída. Processando ${images.length} páginas com GPT-4o-mini Vision...`);
+    
+    let combinedText = '';
+    
+    const batchSize = 2;
+    for (let i = 0; i < images.length; i += batchSize) {
+      const batch = images.slice(i, i + batchSize);
+      console.log(`[PDF-VISION] Enviando lote ${Math.floor(i/batchSize) + 1} de ${Math.ceil(images.length/batchSize)} para OpenAI...`);
+      
+      let success = false;
+      let retries = 0;
+      const maxRetries = 3;
+      
+      while (!success && retries < maxRetries) {
+        try {
+          const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: "Você é um assistente especializado em OCR técnico. Transcreva o conteúdo das imagens ignorando marcas d'água repetitivas e textos de segurança. Foque em dados técnicos e tabelas."
+              },
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: "Transcreva o conteúdo técnico destas páginas:" },
+                  ...batch.map(img => ({
+                    type: "image_url",
+                    image_url: { url: `data:image/png;base64,${img}` }
+                  }))
+                ]
+              }
+            ],
+            max_tokens: 4096,
+            temperature: 0
+          });
+          
+          combinedText += response.choices[0].message.content.trim() + '\n\n';
+          success = true;
+        } catch (error) {
+          if (error.status === 429) {
+            retries++;
+            const waitTime = 5000 * retries;
+            console.warn(`[PDF-VISION] Rate limit atingido. Tentativa ${retries}/${maxRetries}. Esperando ${waitTime/1000}s...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          } else {
+            throw error;
+          }
+        }
+      }
+      
+      if (!success) throw new Error(`Falha ao processar lote ${Math.floor(i/batchSize) + 1} após ${maxRetries} tentativas.`);
+      
+      if (i + batchSize < images.length) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
+    
+    return combinedText.trim();
+  } catch (error) {
+    console.error('[PDF-VISION] Erro na extração via visão:', error);
+    throw new Error(`Erro na extração visual (OCR): ${error.message}`);
   }
 }
 
@@ -158,7 +300,7 @@ async function generateStructuredSummary(text) {
   }
 }
 
-export async function processPDFFile(filePath, fileName) {
+export async function processPDFFile(filePath, fileName, forceVision = false) {
   try {
     const storagePath = getStoragePath();
     const pdfId = uuidv4();
@@ -206,10 +348,15 @@ export async function processPDFFile(filePath, fileName) {
     let structuredSummary = '';
     
     try {
-      extractedText = await extractRawTextFromPDF(savedFilePath);
+      if (forceVision) {
+        console.log(`[PDF] Extração via Visão forçada para: ${fileName}`);
+        extractedText = await extractTextViaVision(savedFilePath);
+      } else {
+        extractedText = await extractRawTextFromPDF(savedFilePath);
+      }
       
       if (!extractedText || extractedText.trim().length === 0) {
-        throw new Error('Nenhum texto foi extraído do PDF');
+        throw new Error('Nenhum texto foi extraído do PDF (mesmo após tentativa com Visão)');
       }
       
       extractedText = await applyDictionaryReplacements(extractedText);

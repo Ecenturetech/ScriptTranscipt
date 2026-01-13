@@ -7,10 +7,8 @@ import { applyDictionaryReplacements } from '../services/videoTranscription.js';
 const router = express.Router();
 const BAYER_FRONT_API_BASE_URL = process.env.BAYER_FRONT_API_BASE_URL || 'https://ctb-bayer-staging.web.app';
 
-// GET /api/scorms/available - Lista SCORMs disponíveis da API content-report
 router.get('/available', async (req, res) => {
   try {
-    // Usa a API content-report que é a fonte oficial de dados
     const response = await axios.get(`${BAYER_FRONT_API_BASE_URL}/api/content-report`, {
       headers: {
         'Content-Type': 'application/json',
@@ -19,7 +17,6 @@ router.get('/available', async (req, res) => {
 
     const contentData = response.data || {};
     
-    // Converte o objeto de cursos em array de SCORMs
     const scorms = Object.entries(contentData).map(([coursePath, courseInfo]) => ({
       id: courseInfo.id,
       name: courseInfo.title,

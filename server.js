@@ -1,3 +1,4 @@
+import './utils/polyfills.js';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -387,12 +388,15 @@ app.post('/api/pdfs/upload-multiple', uploadPDFMultiple.array('pdfs', 5), async 
     }
 
     const jobIds = [];
+    const forceVision = req.body.forceVision === 'true';
+    
     for (const file of req.files) {
       const jobId = queue.addJob({
         type: 'pdf',
         data: {
           filePath: file.path,
-          fileName: file.originalname
+          fileName: file.originalname,
+          forceVision
         }
       });
       jobIds.push(jobId);

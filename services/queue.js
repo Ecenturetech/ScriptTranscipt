@@ -70,8 +70,8 @@ class TranscriptionQueue extends EventEmitter {
         const { videoUrl } = job.data;
         result = await downloadTranscript(videoUrl);
       } else if (job.type === 'pdf') {
-        const { filePath, fileName } = job.data;
-        result = await processPDFFile(filePath, fileName);
+        const { filePath, fileName, forceVision } = job.data;
+        result = await processPDFFile(filePath, fileName, forceVision);
       } else if (job.type === 'scorm') {
         const { scormId, scormName, coursePath } = job.data;
         result = await processScormContent(scormId, scormName, coursePath);
