@@ -2,6 +2,7 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
 import path from 'path';
+import fs from 'fs';
 import { PromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
 import { ChatOpenAI } from '@langchain/openai';
@@ -9,7 +10,8 @@ import dotenv from 'dotenv';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import pool from '../db/connection.js';
-import { applyDictionaryReplacements } from './videoTranscription.js';
+import { applyDictionaryReplacements, processVideoFile } from './videoTranscription.js';
+import { getStoragePath } from '../utils/storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +26,7 @@ if (process.env.OPENAI_API_KEY) {
 }
 
 const BAYER_FRONT_API_BASE_URL = process.env.BAYER_FRONT_API_BASE_URL || 'https://ctb-bayer-staging.web.app';
+const CONTENT_QUERY_API_URL = `${BAYER_FRONT_API_BASE_URL}/api/_content/query`;
 
 /**
  * Busca os prompts do banco de dados
@@ -161,6 +164,191 @@ async function generateStructuredSummary(text) {
 }
 
 /**
+ * Busca vídeos do SCORM usando a API _content/query
+ */
+async function findScormVideos(coursePath) {
+  try {
+    console.log(`[SCORM-VIDEOS] Buscando vídeos para curso: ${coursePath}`);
+    
+    // Faz GET na API para buscar todos os conteúdos
+    const response = await axios.get(CONTENT_QUERY_API_URL, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const allContent = Array.isArray(response.data) ? response.data : [];
+    console.log(`[SCORM-VIDEOS] API retornou ${allContent.length} itens`);
+    
+    // Normaliza o coursePath
+    let normalizedPath = coursePath;
+    if (!normalizedPath.startsWith('/')) {
+      normalizedPath = `/${normalizedPath}`;
+    }
+    if (!normalizedPath.startsWith('/course/')) {
+      normalizedPath = `/course/${normalizedPath.replace(/^\//, '')}`;
+    }
+    
+    // Encontra o _info.yaml para pegar o assetsPath
+    const courseDir = normalizedPath.split('/').slice(0, 3).join('/'); // /course/nome-curso
+    const infoPath = `${courseDir}/_info`;
+    
+    const infoFile = allContent.find(item => 
+      item._path === infoPath || item._path?.endsWith('/_info')
+    );
+    
+    const assetsPath = infoFile?.assetsPath || null;
+    console.log(`[SCORM-VIDEOS] assetsPath encontrado: ${assetsPath || 'não encontrado'}`);
+    
+    // Função recursiva para buscar vídeos no body
+    const findVideos = (children, pagePath, pageTitle) => {
+      const videos = [];
+      
+      if (!Array.isArray(children)) return videos;
+      
+      children.forEach(child => {
+        if (child.tag === 'content-video') {
+          const videoSrc = child.props?.src || '';
+          
+          let fullVideoSrc = videoSrc;
+          if (videoSrc && !videoSrc.startsWith('http://') && !videoSrc.startsWith('https://')) {
+            if (assetsPath) {
+              const basePath = assetsPath.endsWith('/') ? assetsPath : assetsPath + '/';
+              const relativePath = videoSrc.startsWith('/') ? videoSrc.substring(1) : videoSrc;
+              fullVideoSrc = basePath + relativePath;
+            }
+          }
+          
+          videos.push({
+            id: child.props?.id || uuidv4(),
+            title: child.props?.title || 'Sem título',
+            src: fullVideoSrc,
+            originalSrc: videoSrc,
+            pagePath: pagePath,
+            pageTitle: pageTitle,
+            assetsPath: assetsPath
+          });
+        }
+        
+        // Busca recursivamente em children
+        if (child.children && Array.isArray(child.children)) {
+          videos.push(...findVideos(child.children, pagePath, pageTitle));
+        }
+      });
+      
+      return videos;
+    };
+    
+    // Filtra páginas do curso e busca vídeos
+    const videosList = [];
+    
+    allContent.forEach(item => {
+      // Ignora arquivos _info e outros arquivos especiais
+      if (!item._path || item._path.endsWith('/_info') || !item.body) {
+        return;
+      }
+      
+      // Filtra apenas páginas do curso específico
+      if (item._path.startsWith(courseDir)) {
+        const pageVideos = findVideos(item.body.children || [], item._path, item.title || 'Sem título');
+        
+        if (pageVideos.length > 0) {
+          videosList.push(...pageVideos);
+        }
+      }
+    });
+    
+    console.log(`[SCORM-VIDEOS] Encontrados ${videosList.length} vídeos no curso`);
+    
+    return videosList;
+  } catch (error) {
+    console.error('[SCORM-VIDEOS] Erro ao buscar vídeos:', error);
+    throw new Error(`Erro ao buscar vídeos do SCORM: ${error.message}`);
+  }
+}
+
+/**
+ * Baixa vídeo de uma URL e salva localmente
+ */
+async function downloadVideoFromUrl(videoUrl, fileName) {
+  try {
+    console.log(`[SCORM-VIDEO] Baixando vídeo: ${videoUrl}`);
+    
+    const response = await axios({
+      method: 'GET',
+      url: videoUrl,
+      responseType: 'stream',
+      timeout: 300000 // 5 minutos
+    });
+    
+    const storagePath = getStoragePath();
+    const filePath = path.join(storagePath, fileName);
+    
+    const writer = fs.createWriteStream(filePath);
+    response.data.pipe(writer);
+    
+    return new Promise((resolve, reject) => {
+      writer.on('finish', () => {
+        console.log(`[SCORM-VIDEO] Vídeo baixado: ${filePath}`);
+        resolve(filePath);
+      });
+      writer.on('error', reject);
+    });
+  } catch (error) {
+    console.error(`[SCORM-VIDEO] Erro ao baixar vídeo: ${error.message}`);
+    throw new Error(`Erro ao baixar vídeo: ${error.message}`);
+  }
+}
+
+/**
+ * Processa vídeos do SCORM
+ */
+async function processScormVideos(videos, scormId, scormName) {
+  const processedVideos = [];
+  const errors = [];
+  
+  for (const video of videos) {
+    try {
+      console.log(`[SCORM-VIDEO] Processando vídeo: ${video.title} (${video.src})`);
+      
+      // Baixa o vídeo
+      const fileExtension = path.extname(video.originalSrc) || '.mp4';
+      const fileName = `scorm-${scormId}-${video.id}${fileExtension}`;
+      const filePath = await downloadVideoFromUrl(video.src, fileName);
+      
+      // Processa o vídeo (transcreve)
+      const result = await processVideoFile(filePath, fileName);
+      
+      processedVideos.push({
+        videoId: result.videoId,
+        title: video.title,
+        src: video.src,
+        pagePath: video.pagePath,
+        pageTitle: video.pageTitle,
+        transcript: result.transcript,
+        structuredTranscript: result.structuredTranscript,
+        questionsAnswers: result.questionsAnswers
+      });
+      
+      console.log(`[SCORM-VIDEO] Vídeo processado com sucesso: ${video.title}`);
+    } catch (error) {
+      console.error(`[SCORM-VIDEO] Erro ao processar vídeo ${video.title}:`, error.message);
+      errors.push({
+        video: video.title,
+        error: error.message
+      });
+    }
+  }
+  
+  return {
+    processed: processedVideos,
+    errors: errors,
+    total: videos.length,
+    success: processedVideos.length
+  };
+}
+
+/**
  * Gera perguntas e respostas baseado no texto
  */
 async function generateQuestionsAnswers(text) {
@@ -220,6 +408,24 @@ export async function processScormContent(scormId, scormName, coursePath) {
 
     console.log(`[SCORM] Registro criado no banco: ${scormDbId}`);
 
+    // Busca e processa vídeos do SCORM
+    let videosResult = { processed: [], errors: [], total: 0, success: 0 };
+    try {
+      console.log(`[SCORM] Buscando vídeos do SCORM...`);
+      const videos = await findScormVideos(coursePath);
+      
+      if (videos.length > 0) {
+        console.log(`[SCORM] Encontrados ${videos.length} vídeos, iniciando processamento...`);
+        videosResult = await processScormVideos(videos, scormId, scormName);
+        console.log(`[SCORM] Vídeos processados: ${videosResult.success}/${videosResult.total}`);
+      } else {
+        console.log(`[SCORM] Nenhum vídeo encontrado no SCORM`);
+      }
+    } catch (videoError) {
+      console.error(`[SCORM] Erro ao processar vídeos (continuando com texto):`, videoError.message);
+      videosResult.errors.push({ error: videoError.message });
+    }
+
     // Extrai texto do conteúdo SCORM
     console.log(`[SCORM] Extraindo texto do conteúdo...`);
     const extractedText = await extractTextFromScormContent(scormId);
@@ -254,6 +460,7 @@ export async function processScormContent(scormId, scormName, coursePath) {
     );
 
     console.log(`[SCORM] Processamento concluído com sucesso: ${scormDbId}`);
+    console.log(`[SCORM] Resumo: ${videosResult.success} vídeos processados, ${videosResult.errors.length} erros`);
 
     return {
       success: true,
@@ -263,7 +470,13 @@ export async function processScormContent(scormId, scormName, coursePath) {
       coursePath,
       extractedText: textWithReplacements,
       structuredSummary,
-      questionsAnswers
+      questionsAnswers,
+      videos: {
+        total: videosResult.total,
+        processed: videosResult.processed.length,
+        errors: videosResult.errors.length,
+        details: videosResult
+      }
     };
   } catch (error) {
     console.error('[SCORM] Erro no processamento:', error);
