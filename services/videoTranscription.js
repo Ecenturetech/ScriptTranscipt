@@ -9,6 +9,7 @@ import generateQA, { generateEnhancedTranscript } from '../ai_qa_generator.js';
 import { enrichTranscriptFromCatalog } from '../culture_enricher.js';
 import pool from '../db/connection.js';
 import { getStoragePath } from '../utils/storage.js';
+import { splitAudioFile, cleanupChunks } from '../utils/audioSplitter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,30 +96,70 @@ export async function processVideoFile(filePath, fileName) {
     }
     
     let transcriptText = '';
+    let chunkPaths = [];
     try {
       const fileStats = fs.statSync(savedFilePath);
       const fileSizeMB = fileStats.size / (1024 * 1024);
       
       if (fileSizeMB > 25) {
-        console.warn(`Arquivo maior que 25MB (${fileSizeMB.toFixed(2)} MB). A API Whisper tem limite de 25MB.`);
-      }
-      
-      const fileStream = fs.createReadStream(savedFilePath);
-      
-      const transcription = await openai.audio.transcriptions.create({
-        file: fileStream,
-        model: 'whisper-1',
-        language: 'pt',
-        response_format: 'text',
-      });
-      
-      if (typeof transcription === 'string') {
-        transcriptText = transcription.trim();
-      } else if (transcription && typeof transcription === 'object') {
-        transcriptText = (transcription.text || transcription.transcript || String(transcription)).trim();
+        console.log(`Arquivo maior que 25MB (${fileSizeMB.toFixed(2)} MB). Tentando dividir em chunks menores...`);
+        chunkPaths = await splitAudioFile(savedFilePath, storagePath, videoId);
+        
+        if (chunkPaths.length === 1 && chunkPaths[0] === savedFilePath && fileSizeMB > 25) {
+          console.warn('Arquivo grande detectado mas não foi possível dividir (ffmpeg pode não estar instalado)');
+          console.warn('Tentando processar mesmo assim. Se falhar, instale o FFmpeg: https://ffmpeg.org/download.html');
+        }
       } else {
-        transcriptText = String(transcription).trim();
+        chunkPaths = [savedFilePath];
       }
+      
+      const transcriptParts = [];
+      
+      for (let i = 0; i < chunkPaths.length; i++) {
+        const chunkPath = chunkPaths[i];
+        const chunkSizeMB = fs.statSync(chunkPath).size / (1024 * 1024);
+        
+        console.log(`Processando chunk ${i + 1}/${chunkPaths.length} (${chunkSizeMB.toFixed(2)} MB)...`);
+        
+        try {
+          const fileStream = fs.createReadStream(chunkPath);
+          
+          const transcription = await openai.audio.transcriptions.create({
+            file: fileStream,
+            model: 'whisper-1',
+            language: 'pt',
+            response_format: 'text',
+          });
+          
+          let chunkTranscript = '';
+          if (typeof transcription === 'string') {
+            chunkTranscript = transcription.trim();
+          } else if (transcription && typeof transcription === 'object') {
+            chunkTranscript = (transcription.text || transcription.transcript || String(transcription)).trim();
+          } else {
+            chunkTranscript = String(transcription).trim();
+          }
+          
+          if (chunkTranscript && chunkTranscript.length > 0) {
+            transcriptParts.push(chunkTranscript);
+          }
+        } catch (chunkError) {
+          if (chunkError.message && (
+            chunkError.message.includes('25') || 
+            chunkError.message.includes('file too large') ||
+            chunkError.message.includes('size limit')
+          )) {
+            throw new Error(
+              `Arquivo muito grande (${chunkSizeMB.toFixed(2)} MB). ` +
+              `A API Whisper tem limite de 25MB. ` +
+              `Por favor, instale o FFmpeg para dividir arquivos grandes automaticamente: https://ffmpeg.org/download.html`
+            );
+          }
+          throw chunkError;
+        }
+      }
+      
+      transcriptText = transcriptParts.join(' ').trim();
       
       if (!transcriptText || transcriptText.trim().length === 0) {
         throw new Error('Transcrição retornou vazia');
@@ -131,7 +172,17 @@ export async function processVideoFile(filePath, fileName) {
         [transcriptText, videoId_db]
       );
       
+      if (chunkPaths.length > 1 || (chunkPaths.length === 1 && chunkPaths[0] !== savedFilePath)) {
+        const tempChunks = chunkPaths.filter(p => p !== savedFilePath);
+        cleanupChunks(tempChunks);
+      }
+      
     } catch (transcriptionError) {
+      if (chunkPaths.length > 0) {
+        const tempChunks = chunkPaths.filter(p => p !== savedFilePath);
+        cleanupChunks(tempChunks);
+      }
+      
       const errorMessage = `Erro na transcrição: ${transcriptionError.message}`;
       await pool.query(
         `UPDATE videos SET status = $1, transcript = $2 WHERE id = $3`,

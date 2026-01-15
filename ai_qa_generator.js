@@ -49,9 +49,14 @@ const generateQA = async (inputFile = "./transcript_doc.txt", outputFile = "resu
       temperature: 0.7,
     });
 
-    const template = prompts.qaPrompt.includes('{text}') 
+    let template = prompts.qaPrompt.includes('{text}') 
       ? prompts.qaPrompt 
       : `${prompts.qaPrompt}\n\nTexto base:\n"{text}"\n\nGere o Q&A agora e utilize a língua do texto original:`;
+    
+    // Adiciona prompt adicional se existir
+    if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
+      template += `\n\nInstruções adicionais:\n${prompts.additionalPrompt}`;
+    }
 
     const prompt = PromptTemplate.fromTemplate(template);
 
@@ -93,6 +98,10 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
     
     if (prompts.transcriptPrompt.includes('{text}')) {
       template = prompts.transcriptPrompt;
+      // Adiciona prompt adicional antes do {text} se existir
+      if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
+        template = template.replace('{text}', `{text}\n\nInstruções adicionais:\n${prompts.additionalPrompt}`);
+      }
     } else {
       template = `
       Você é um especialista em transcrições e formatação de conteúdo.
@@ -110,6 +119,11 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
       8. Não invente informações que não estão no texto original
       9. Cada fala do mesmo falante deve estar em uma linha separada com o formato: [Nome do Falante]: [Texto]
     `;
+
+      // Adiciona prompt adicional se existir
+      if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
+        template += `\n\nPrompt adicional customizado:\n${prompts.additionalPrompt}\n`;
+      }
 
       if (exampleText) {
         const exampleLines = exampleText.split('\n');
