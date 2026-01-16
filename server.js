@@ -55,13 +55,18 @@ const upload = multer({
       'video/quicktime',
       'video/x-msvideo',
       'video/x-matroska',
-      'video/webm'
+      'video/webm',
+      'audio/mpeg',
+      'audio/wav',
+      'audio/x-m4a',
+      'audio/ogg',
+      'audio/mp4'
     ];
     
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Tipo de arquivo não suportado. Use MP4, MOV, AVI, MKV ou WEBM.'));
+      cb(new Error('Tipo de arquivo não suportado. Use vídeo (MP4, MOV, AVI...) ou áudio (MP3, WAV, M4A...).'));
     }
   }
 });
@@ -79,13 +84,18 @@ const uploadMultiple = multer({
       'video/quicktime',
       'video/x-msvideo',
       'video/x-matroska',
-      'video/webm'
+      'video/webm',
+      'audio/mpeg',
+      'audio/wav',
+      'audio/x-m4a',
+      'audio/ogg',
+      'audio/mp4'
     ];
     
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Tipo de arquivo não suportado. Use MP4, MOV, AVI, MKV ou WEBM.'));
+      cb(new Error('Tipo de arquivo não suportado. Use vídeo (MP4, MOV, AVI...) ou áudio (MP3, WAV, M4A...).'));
     }
   }
 });
