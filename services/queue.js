@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { processVideoFile } from './videoTranscription.js';
+import { processVideoFile, processAudioFile } from './videoTranscription.js';
 import { processPDFFile } from './pdfProcessing.js';
 import { processScormContent } from './scormProcessing.js';
 import { downloadTranscript } from '../downloadTranscript.js';
@@ -66,6 +66,9 @@ class TranscriptionQueue extends EventEmitter {
       if (job.type === 'upload') {
         const { filePath, fileName } = job.data;
         result = await processVideoFile(filePath, fileName);
+      } else if (job.type === 'upload-audio') {
+        const { filePath, fileName } = job.data;
+        result = await processAudioFile(filePath, fileName);
       } else if (job.type === 'url') {
         const { videoUrl } = job.data;
         result = await downloadTranscript(videoUrl);
@@ -120,6 +123,7 @@ class TranscriptionQueue extends EventEmitter {
       result: job.result ? {
         success: job.result.success,
         videoId: job.result.videoId,
+        audioId: job.result.audioId,
         pdfId: job.result.pdfId,
         message: job.result.message
       } : null

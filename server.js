@@ -10,6 +10,7 @@ import { downloadTranscript } from './downloadTranscript.js';
 import { processVideoFile } from './services/videoTranscription.js';
 import queue from './services/queue.js';
 import videoRoutes from './routes/videos.js';
+import audioRoutes from './routes/audios.js';
 import pdfRoutes from './routes/pdfs.js';
 import settingsRoutes from './routes/settings.js';
 import dictionaryRoutes from './routes/dictionary.js';
@@ -101,6 +102,7 @@ const uploadMultiple = multer({
 });
 
 app.use('/api/videos', videoRoutes);
+app.use('/api/audios', audioRoutes);
 app.use('/api/pdfs', pdfRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/dictionary', dictionaryRoutes);
@@ -209,6 +211,107 @@ app.post('/api/transcribe/upload', upload.single('video'), async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: error.message || 'Erro ao adicionar upload à fila' 
+    });
+  }
+});
+
+app.post('/api/transcribe/upload-audio', upload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Nenhum arquivo enviado' 
+      });
+    }
+
+    const jobId = queue.addJob({
+      type: 'upload-audio',
+      data: {
+        filePath: req.file.path,
+        fileName: req.file.originalname
+      }
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Áudio adicionado à fila!',
+      jobId,
+      queueInfo: queue.getQueueInfo()
+    });
+
+  } catch (error) {
+    console.error('Erro ao adicionar upload de áudio à fila:', error);
+    console.error('   Stack:', error.stack);
+    
+    if (req.file && fs.existsSync(req.file.path)) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (cleanupError) {
+        console.error('Erro ao limpar arquivo:', cleanupError);
+      }
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Erro ao adicionar upload de áudio à fila' 
+    });
+  }
+});
+
+app.post('/api/transcribe/upload-audio-multiple', uploadMultiple.array('audios', 5), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Nenhum arquivo enviado' 
+      });
+    }
+
+    if (req.files.length > 5) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Máximo de 5 arquivos por vez' 
+      });
+    }
+
+    const jobIds = [];
+    for (const file of req.files) {
+      const jobId = queue.addJob({
+        type: 'upload-audio',
+        data: {
+          filePath: file.path,
+          fileName: file.originalname
+        }
+      });
+      jobIds.push(jobId);
+    }
+
+    res.json({ 
+      success: true, 
+      message: `${jobIds.length} áudio(s) adicionado(s) à fila!`,
+      jobIds,
+      queueInfo: queue.getQueueInfo()
+    });
+
+  } catch (error) {
+    console.error('Erro ao adicionar uploads de áudio à fila:', error);
+    console.error('   Stack:', error.stack);
+    
+    if (req.files) {
+      for (const file of req.files) {
+        if (fs.existsSync(file.path)) {
+          try {
+            fs.unlinkSync(file.path);
+          } catch (cleanupError) {
+            console.error('Erro ao limpar arquivo:', cleanupError);
+          }
+        }
+      }
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Erro ao adicionar uploads de áudio à fila' 
     });
   }
 });

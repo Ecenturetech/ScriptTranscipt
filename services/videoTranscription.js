@@ -55,27 +55,36 @@ export async function applyDictionaryReplacements(text) {
   }
 }
 
-
+// Wrapper para manter compatibilidade com videos
 export async function processVideoFile(filePath, fileName) {
+  return processMediaFile(filePath, fileName, 'videos');
+}
+
+// Wrapper para audios
+export async function processAudioFile(filePath, fileName) {
+  return processMediaFile(filePath, fileName, 'audios');
+}
+
+export async function processMediaFile(filePath, fileName, tableName = 'videos') {
   try {
     const storagePath = getStoragePath();
-    const videoId = uuidv4();
+    const mediaId = uuidv4();
     
     const fileExtension = path.extname(fileName);
-    const savedFileName = `video-${videoId}${fileExtension}`;
+    const savedFileName = `${tableName === 'audios' ? 'audio' : 'video'}-${mediaId}${fileExtension}`;
     const savedFilePath = path.join(storagePath, savedFileName);
     
     if (filePath !== savedFilePath) {
       fs.copyFileSync(filePath, savedFilePath);
     }
     
-    const videoId_db = uuidv4();
+    const dbId = uuidv4();
     
     await pool.query(
-      `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
+      `INSERT INTO ${tableName} (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
-        videoId_db,
+        dbId,
         fileName,
         'upload',
         null,
@@ -89,8 +98,8 @@ export async function processVideoFile(filePath, fileName) {
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.length < 10) {
       const keyError = 'OPENAI_API_KEY ausente ou inválida no .env. A transcrição de upload requer esta chave.';
       await pool.query(
-        `UPDATE videos SET status = $1, transcript = $2 WHERE id = $3`,
-        ['error', keyError, videoId_db]
+        `UPDATE ${tableName} SET status = $1, transcript = $2 WHERE id = $3`,
+        ['error', keyError, dbId]
       );
       throw new Error(keyError);
     }
@@ -103,7 +112,7 @@ export async function processVideoFile(filePath, fileName) {
       
       if (fileSizeMB > 25) {
         console.log(`Arquivo maior que 25MB (${fileSizeMB.toFixed(2)} MB). Tentando dividir em chunks menores...`);
-        chunkPaths = await splitAudioFile(savedFilePath, storagePath, videoId);
+        chunkPaths = await splitAudioFile(savedFilePath, storagePath, mediaId);
         
         if (chunkPaths.length === 1 && chunkPaths[0] === savedFilePath && fileSizeMB > 25) {
           console.warn('Arquivo grande detectado mas não foi possível dividir (ffmpeg pode não estar instalado)');
@@ -168,8 +177,8 @@ export async function processVideoFile(filePath, fileName) {
       transcriptText = await applyDictionaryReplacements(transcriptText);
       
       await pool.query(
-        `UPDATE videos SET transcript = $1 WHERE id = $2`,
-        [transcriptText, videoId_db]
+        `UPDATE ${tableName} SET transcript = $1 WHERE id = $2`,
+        [transcriptText, dbId]
       );
       
       if (chunkPaths.length > 1 || (chunkPaths.length === 1 && chunkPaths[0] !== savedFilePath)) {
@@ -185,38 +194,70 @@ export async function processVideoFile(filePath, fileName) {
       
       const errorMessage = `Erro na transcrição: ${transcriptionError.message}`;
       await pool.query(
-        `UPDATE videos SET status = $1, transcript = $2 WHERE id = $3`,
-        ['error', errorMessage, videoId_db]
+        `UPDATE ${tableName} SET status = $1, transcript = $2 WHERE id = $3`,
+        ['error', errorMessage, dbId]
       );
       
-      throw new Error(`Erro ao transcrever vídeo: ${transcriptionError.message}`);
+      throw new Error(`Erro ao transcrever arquivo: ${transcriptionError.message}`);
     }
     
-    const processedResult = await processVideoTranscript(videoId_db, transcriptText);
+    let processedResult;
+    try {
+      processedResult = await processMediaTranscript(dbId, transcriptText, tableName);
+    } catch (processError) {
+      console.error(`[${tableName.toUpperCase()}] Erro ao processar transcrição completa, mas transcript básico foi salvo:`, processError.message);
+      // Mesmo se houver erro no processamento completo, garantir que o status seja atualizado
+      // com pelo menos o transcript básico
+      try {
+        await pool.query(
+          `UPDATE ${tableName} SET status = $1 WHERE id = $2`,
+          ['completed', dbId]
+        );
+        console.log(`[${tableName.toUpperCase()}] Status atualizado para 'completed' mesmo com erro no processamento completo`);
+      } catch (updateError) {
+        console.error(`[${tableName.toUpperCase()}] Erro ao atualizar status:`, updateError.message);
+      }
+      
+      // Retornar resultado parcial
+      processedResult = {
+        success: true,
+        transcript: transcriptText,
+        structuredTranscript: null,
+        questionsAnswers: null
+      };
+    }
     
     return {
       success: true,
-      videoId: videoId_db,
+      id: dbId, // renomeado de videoId para id genérico, mas mantemos compatibilidade se o caller checar id
+      videoId: dbId, // legacy support
+      audioId: dbId, // audio support
       fileName: savedFileName,
       storagePath: path.relative(path.join(__dirname, '..'), storagePath).replace(/\\/g, '/'),
       transcript: transcriptText,
       structuredTranscript: processedResult.structuredTranscript,
       questionsAnswers: processedResult.questionsAnswers,
-      message: 'Vídeo processado e transcrito com sucesso!'
+      message: 'Arquivo processado e transcrito com sucesso!'
     };
     
   } catch (error) {
-    console.error('Erro ao processar arquivo de vídeo:', error);
+    console.error(`[${tableName.toUpperCase()}] Erro ao processar arquivo de mídia:`, error);
+    console.error(`[${tableName.toUpperCase()}] Stack:`, error.stack);
     throw error;
   }
 }
 
+// Wrapper para compatibilidade
 export async function processVideoTranscript(videoId, transcriptText) {
+  return processMediaTranscript(videoId, transcriptText, 'videos');
+}
+
+export async function processMediaTranscript(id, transcriptText, tableName = 'videos') {
   try {
     const storagePath = getStoragePath();
-    const tempTxtPath = path.join(storagePath, `temp-transcript-${videoId}.txt`);
-    const tempEnhancedPath = path.join(storagePath, `temp-enhanced-${videoId}.txt`);
-    const tempQAPath = path.join(storagePath, `temp-qa-${videoId}.txt`);
+    const tempTxtPath = path.join(storagePath, `temp-transcript-${id}.txt`);
+    const tempEnhancedPath = path.join(storagePath, `temp-enhanced-${id}.txt`);
+    const tempQAPath = path.join(storagePath, `temp-qa-${id}.txt`);
     
     fs.writeFileSync(tempTxtPath, transcriptText);
     
@@ -240,16 +281,21 @@ export async function processVideoTranscript(videoId, transcriptText) {
       console.error("Erro ao gerar Q&A:", error.message);
     }
     
+    console.log(`[${tableName.toUpperCase()}] Atualizando status para 'completed' no banco para ID: ${id}`);
+    
     await pool.query(
-      `UPDATE videos SET status = $1, transcript = $2, structured_transcript = $3, questions_answers = $4 WHERE id = $5`,
-      ['completed', transcriptText, enhancedText || null, qaText || null, videoId]
+      `UPDATE ${tableName} SET status = $1, transcript = $2, structured_transcript = $3, questions_answers = $4 WHERE id = $5`,
+      ['completed', transcriptText, enhancedText || null, qaText || null, id]
     );
+    
+    console.log(`[${tableName.toUpperCase()}] Status atualizado com sucesso para ID: ${id}`);
     
     try {
       if (fs.existsSync(tempTxtPath)) fs.unlinkSync(tempTxtPath);
       if (fs.existsSync(tempEnhancedPath)) fs.unlinkSync(tempEnhancedPath);
       if (fs.existsSync(tempQAPath)) fs.unlinkSync(tempQAPath);
     } catch (error) {
+      console.warn(`[${tableName.toUpperCase()}] Erro ao limpar arquivos temporários:`, error.message);
     }
     
     return {
@@ -260,8 +306,19 @@ export async function processVideoTranscript(videoId, transcriptText) {
     };
     
   } catch (error) {
-    console.error('Erro ao processar transcrição:', error);
+    console.error(`[${tableName.toUpperCase()}] Erro ao processar transcrição:`, error);
+    console.error(`[${tableName.toUpperCase()}] Stack:`, error.stack);
+    
+    // Tentar atualizar o status para erro se possível
+    try {
+      await pool.query(
+        `UPDATE ${tableName} SET status = $1 WHERE id = $2`,
+        ['error', id]
+      );
+    } catch (updateError) {
+      console.error(`[${tableName.toUpperCase()}] Erro ao atualizar status para 'error':`, updateError.message);
+    }
+    
     throw error;
   }
 }
-
