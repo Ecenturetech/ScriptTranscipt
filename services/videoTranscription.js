@@ -55,12 +55,10 @@ export async function applyDictionaryReplacements(text) {
   }
 }
 
-// Wrapper para manter compatibilidade com videos
 export async function processVideoFile(filePath, fileName) {
   return processMediaFile(filePath, fileName, 'videos');
 }
 
-// Wrapper para audios
 export async function processAudioFile(filePath, fileName) {
   return processMediaFile(filePath, fileName, 'audios');
 }
@@ -206,8 +204,6 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
       processedResult = await processMediaTranscript(dbId, transcriptText, tableName);
     } catch (processError) {
       console.error(`[${tableName.toUpperCase()}] Erro ao processar transcrição completa, mas transcript básico foi salvo:`, processError.message);
-      // Mesmo se houver erro no processamento completo, garantir que o status seja atualizado
-      // com pelo menos o transcript básico
       try {
         await pool.query(
           `UPDATE ${tableName} SET status = $1 WHERE id = $2`,
@@ -218,7 +214,6 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
         console.error(`[${tableName.toUpperCase()}] Erro ao atualizar status:`, updateError.message);
       }
       
-      // Retornar resultado parcial
       processedResult = {
         success: true,
         transcript: transcriptText,
@@ -229,9 +224,9 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
     
     return {
       success: true,
-      id: dbId, // renomeado de videoId para id genérico, mas mantemos compatibilidade se o caller checar id
-      videoId: dbId, // legacy support
-      audioId: dbId, // audio support
+      id: dbId,
+      videoId: dbId,
+      audioId: dbId,
       fileName: savedFileName,
       storagePath: path.relative(path.join(__dirname, '..'), storagePath).replace(/\\/g, '/'),
       transcript: transcriptText,
@@ -247,7 +242,6 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
   }
 }
 
-// Wrapper para compatibilidade
 export async function processVideoTranscript(videoId, transcriptText) {
   return processMediaTranscript(videoId, transcriptText, 'videos');
 }
@@ -309,7 +303,6 @@ export async function processMediaTranscript(id, transcriptText, tableName = 'vi
     console.error(`[${tableName.toUpperCase()}] Erro ao processar transcrição:`, error);
     console.error(`[${tableName.toUpperCase()}] Stack:`, error.stack);
     
-    // Tentar atualizar o status para erro se possível
     try {
       await pool.query(
         `UPDATE ${tableName} SET status = $1 WHERE id = $2`,

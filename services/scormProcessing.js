@@ -269,28 +269,22 @@ async function downloadVideoFromUrl(videoUrl, fileName) {
   try {
     console.log(`[SCORM-VIDEO] Baixando vídeo: ${videoUrl}`);
     
-    // Codificar a URL corretamente para lidar com espaços e caracteres especiais
     encodedUrl = videoUrl;
     try {
       const urlObj = new URL(videoUrl);
-      // Codificar cada segmento do pathname separadamente
       const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
       const encodedPathParts = pathParts.map(part => {
-        // Decodificar primeiro para evitar dupla codificação
         try {
           const decoded = decodeURIComponent(part);
           return encodeURIComponent(decoded);
         } catch {
-          // Se já estiver codificado ou tiver problemas, codificar diretamente
           return encodeURIComponent(part);
         }
       });
       urlObj.pathname = '/' + encodedPathParts.join('/');
       encodedUrl = urlObj.toString();
     } catch (urlError) {
-      // Se não for uma URL válida, tentar uma abordagem mais simples
       console.warn(`[SCORM-VIDEO] Aviso ao processar URL: ${urlError.message}`);
-      // Tentar codificar apenas os espaços e caracteres problemáticos
       encodedUrl = videoUrl.replace(/ /g, '%20').replace(/\[/g, '%5B').replace(/\]/g, '%5D');
     }
     
@@ -305,7 +299,7 @@ async function downloadVideoFromUrl(videoUrl, fileName) {
       timeout: 300000,
       maxRedirects: 5,
       validateStatus: function (status) {
-        return status >= 200 && status < 400; // Aceitar redirects
+        return status >= 200 && status < 400;
       }
     });
     

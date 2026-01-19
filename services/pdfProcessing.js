@@ -229,7 +229,6 @@ ${textoLimitado}
 Gere o Q&A agora e utilize a língua do texto original:`;
     }
     
-    // Adiciona prompt adicional se existir
     if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
       promptContent += `\n\nInstruções adicionais:\n${prompts.additionalPrompt}`;
     }
@@ -275,7 +274,6 @@ async function generateStructuredSummary(text) {
     
     if (prompts.transcriptPrompt.includes('{text}')) {
       template = prompts.transcriptPrompt;
-      // Adiciona prompt adicional se existir
       if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
         template = template.replace('{text}', `{text}\n\nInstruções adicionais:\n${prompts.additionalPrompt}`);
       }

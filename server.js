@@ -319,7 +319,7 @@ app.post('/api/transcribe/upload-audio-multiple', uploadMultiple.array('audios',
 const uploadPDFMultiple = multer({
   storage: storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB
+    fileSize: 50 * 1024 * 1024,
     files: 5
   },
   fileFilter: (req, file, cb) => {

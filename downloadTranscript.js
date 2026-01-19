@@ -175,7 +175,6 @@ async function downloadTranscript(videoUrl) {
     if (fs.existsSync(tempEnhancedPath)) fs.unlinkSync(tempEnhancedPath);
     if (fs.existsSync(tempQAPath)) fs.unlinkSync(tempQAPath);
   } catch (error) {
-    // Silenciosamente ignora erros de limpeza
   }
 
   const relativePath = path.relative(__dirname, storagePath).replace(/\\/g, '/');

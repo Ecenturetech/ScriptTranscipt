@@ -50,7 +50,6 @@ router.get('/available', async (req, res) => {
   }
 });
 
-// GET /api/scorms - Lista SCORMs processados (transcritos) do banco de dados
 router.get('/', async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -83,16 +82,13 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/scorms/:id/content - Busca conteúdo de um SCORM específico da API
 router.get('/:id/content', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Busca todos os cursos da API content-report
     const contentResponse = await axios.get(`${BAYER_FRONT_API_BASE_URL}/api/content-report`);
     const contentData = contentResponse.data || {};
     
-    // Tenta encontrar o curso pelo ID (que é o UUID do curso)
     let content = null;
     let coursePath = null;
     
@@ -139,16 +135,13 @@ router.get('/:id/content', async (req, res) => {
   }
 });
 
-// POST /api/scorms/:id/transcribe - Inicia transcrição de um SCORM
 router.post('/:id/transcribe', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Busca todos os cursos da API content-report
     const contentResponse = await axios.get(`${BAYER_FRONT_API_BASE_URL}/api/content-report`);
     const contentData = contentResponse.data || {};
     
-    // Tenta encontrar o curso pelo ID (que é o UUID do curso)
     let content = null;
     let coursePath = null;
     
@@ -168,7 +161,6 @@ router.post('/:id/transcribe', async (req, res) => {
       });
     }
     
-    // Adiciona o job na fila de processamento
     const jobId = queue.addJob({
       type: 'scorm',
       data: {
@@ -213,7 +205,6 @@ router.post('/:id/transcribe', async (req, res) => {
   }
 });
 
-// GET /api/scorms/:id - Busca um SCORM processado específico
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -253,7 +244,6 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/scorms/:id - Deleta um SCORM processado
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
