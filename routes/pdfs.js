@@ -2,6 +2,11 @@ import express from 'express';
 import pool from '../db/connection.js';
 import { v4 as uuidv4 } from 'uuid';
 import { applyDictionaryReplacements } from '../services/videoTranscription.js';
+import { processPDFFile } from '../services/pdfProcessing.js';
+import { getStoragePath } from '../utils/storage.js';
+import fs from 'fs';
+import path from 'path';
+import queue from '../services/queue.js';
 
 const router = express.Router();
 
@@ -254,6 +259,103 @@ router.delete('/:id', async (req, res) => {
   } catch (error) {
     console.error('Erro ao deletar PDF:', error);
     res.status(500).json({ error: 'Erro ao deletar PDF' });
+  }
+});
+
+router.post('/:id/reprocess', async (req, res) => {
+  try {
+    const { forceVision = false } = req.body;
+    const pdfId = req.params.id;
+
+    // Buscar o PDF no banco de dados
+    const { rows } = await pool.query('SELECT * FROM pdfs WHERE id = $1', [pdfId]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'PDF não encontrado' });
+    }
+
+    const pdf = rows[0];
+    
+    // Procurar o arquivo no storage
+    const storagePath = getStoragePath();
+    const files = fs.readdirSync(storagePath);
+    
+    // Procurar arquivo que começa com "pdf-" e tem a extensão do arquivo original
+    const fileExtension = path.extname(pdf.file_name);
+    const pdfFile = files.find(file => 
+      file.startsWith('pdf-') && file.endsWith(fileExtension)
+    );
+
+    if (!pdfFile) {
+      // Se não encontrar, tentar procurar pelo nome original
+      const originalFile = files.find(file => file === pdf.file_name);
+      if (!originalFile) {
+        return res.status(404).json({ 
+          error: 'Arquivo PDF não encontrado no storage. O arquivo pode ter sido removido.' 
+        });
+      }
+      
+      const filePath = path.join(storagePath, originalFile);
+      
+      // Atualizar status para processing
+      await pool.query(
+        'UPDATE pdfs SET status = $1, extracted_text = NULL, structured_summary = NULL, questions_answers = NULL WHERE id = $2',
+        ['processing', pdfId]
+      );
+
+      // Adicionar à fila de processamento
+      const jobId = queue.addJob({
+        type: 'pdf',
+        data: {
+          filePath,
+          fileName: pdf.file_name,
+          forceVision: forceVision === true || forceVision === 'true'
+        }
+      });
+
+      return res.json({
+        success: true,
+        message: 'PDF adicionado à fila para reprocessamento com Modo Visão Inteligente',
+        jobId,
+        queueInfo: queue.getQueueInfo()
+      });
+    }
+
+    const filePath = path.join(storagePath, pdfFile);
+    
+    // Verificar se o arquivo existe
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ 
+        error: 'Arquivo PDF não encontrado no storage' 
+      });
+    }
+
+    // Atualizar status para processing
+    await pool.query(
+      'UPDATE pdfs SET status = $1, extracted_text = NULL, structured_summary = NULL, questions_answers = NULL WHERE id = $2',
+      ['processing', pdfId]
+    );
+
+    // Adicionar à fila de processamento
+    const jobId = queue.addJob({
+      type: 'pdf',
+      data: {
+        filePath,
+        fileName: pdf.file_name,
+        forceVision: forceVision === true || forceVision === 'true'
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'PDF adicionado à fila para reprocessamento com Modo Visão Inteligente',
+      jobId,
+      queueInfo: queue.getQueueInfo()
+    });
+
+  } catch (error) {
+    console.error('Erro ao reprocessar PDF:', error);
+    res.status(500).json({ error: `Erro ao reprocessar PDF: ${error.message}` });
   }
 });
 
