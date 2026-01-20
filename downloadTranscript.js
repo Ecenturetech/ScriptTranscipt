@@ -27,7 +27,6 @@ async function downloadVideoFromVimeo(videoId, fileName) {
   try {
     console.log(`[VIMEO] Obtendo informações do vídeo ${videoId} para download...`);
     
-    // Primeiro, obtemos informações sobre o vídeo
     const videoInfoUrl = `https://api.vimeo.com/videos/${videoId}`;
     const videoInfoResponse = await fetch(videoInfoUrl, {
       headers: { Authorization: `Bearer ${process.env.VIMEO_TOKEN}` },
@@ -45,10 +44,8 @@ async function downloadVideoFromVimeo(videoId, fileName) {
       throw new Error(videoInfo.developer_message || videoInfo.error || "Erro ao obter informações do vídeo");
     }
 
-    // Tentamos obter a URL de download mais alta qualidade
     let downloadUrl = null;
     if (videoInfo.download && videoInfo.download.length > 0) {
-      // Ordena por qualidade e pega a maior
       const sortedDownloads = videoInfo.download.sort((a, b) => {
         const qualityA = parseInt(a.quality) || 0;
         const qualityB = parseInt(b.quality) || 0;
@@ -57,7 +54,6 @@ async function downloadVideoFromVimeo(videoId, fileName) {
       downloadUrl = sortedDownloads[0].link;
       console.log(`[VIMEO] URL de download encontrada (qualidade: ${sortedDownloads[0].quality})`);
     } else if (videoInfo.files && videoInfo.files.length > 0) {
-      // Alternativa: usar files array
       const sortedFiles = videoInfo.files.sort((a, b) => {
         const widthA = parseInt(a.width) || 0;
         const widthB = parseInt(b.width) || 0;
@@ -83,7 +79,7 @@ async function downloadVideoFromVimeo(videoId, fileName) {
       headers: {
         Authorization: `Bearer ${process.env.VIMEO_TOKEN}`,
       },
-      timeout: 600000, // 10 minutos
+      timeout: 600000,
       maxRedirects: 5,
       validateStatus: function (status) {
         return status >= 200 && status < 400;
@@ -150,6 +146,32 @@ async function downloadTranscript(videoUrl) {
     return { success: false, error };
   }
 
+  let videoId_db = null;
+  try {
+    console.log(`[VIMEO] Criando registro no banco de dados com status 'processing'...`);
+    const videoId_db_uuid = uuidv4();
+    const fileName = `vimeo-${videoId}.txt`;
+    
+    await pool.query(
+      `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        videoId_db_uuid,
+        fileName,
+        'vimeo',
+        videoUrl,
+        'processing',
+        null,
+        null,
+        null
+      ]
+    );
+    videoId_db = videoId_db_uuid;
+    console.log(`[VIMEO] Registro criado no banco de dados com ID: ${videoId_db_uuid}`);
+  } catch (error) {
+    console.error("[VIMEO] Erro ao criar registro no banco de dados:", error.message);
+  }
+
   const apiUrl = `https://api.vimeo.com/videos/${videoId}/texttracks`;
   console.log(`[VIMEO] Fazendo requisição para: ${apiUrl}`);
 
@@ -174,10 +196,9 @@ async function downloadTranscript(videoUrl) {
       return { success: false, error };
     }
 
-    // Se não há legendas disponíveis, tenta baixar o vídeo e transcrever com Whisper
     if (!data.data || data.data.length === 0) {
       console.log(`[VIMEO] Nenhuma legenda encontrada. Fazendo fallback: baixando vídeo e transcrevendo com Whisper...`);
-      return await downloadAndTranscribeVideo(videoId, videoUrl);
+      return await downloadAndTranscribeVideo(videoId, videoUrl, videoId_db);
     }
 
     console.log(`[VIMEO] Encontradas ${data.data.length} transcrição(ões) disponível(is)`);
@@ -193,11 +214,10 @@ async function downloadTranscript(videoUrl) {
       data.data.find((t) => t.language === "es-ES") ||
       data.data.find((t) => t.language === "es-x-autogen");
 
-    // Se não há legenda em português/espanhol, tenta baixar o vídeo e transcrever
     if (!track) {
       console.log(`[VIMEO] Nenhuma legenda em português ou espanhol encontrada. Idiomas disponíveis: ${availableLanguages}`);
       console.log(`[VIMEO] Fazendo fallback: baixando vídeo e transcrevendo com Whisper...`);
-      return await downloadAndTranscribeVideo(videoId, videoUrl);
+      return await downloadAndTranscribeVideo(videoId, videoUrl, videoId_db);
     }
 
     console.log(`[VIMEO] Usando transcrição no idioma: ${track.language}`);
@@ -312,36 +332,68 @@ async function downloadTranscript(videoUrl) {
 
   const relativePath = path.relative(__dirname, storagePath).replace(/\\/g, '/');
   
-    let videoId_db = null;
-    try {
-      console.log(`[VIMEO] Salvando no banco de dados...`);
-      const videoId_db_uuid = uuidv4();
-      const fileName = `transcript-${videoId}-${track.language}.txt`;
-      
-      await pool.query(
-        `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          videoId_db_uuid,
-          fileName,
-          'vimeo',
-          videoUrl,
-          'completed',
-          txtFormatted,
-          enhancedText || null,
-          qaText || null
-        ]
-      );
-      
-      videoId_db = videoId_db_uuid;
-      console.log(`[VIMEO] Salvo no banco de dados com ID: ${videoId_db_uuid}`);
-    } catch (error) {
-      console.error("[VIMEO] Erro ao salvar no banco de dados:", error.message);
-      throw error;
+    if (videoId_db) {
+      try {
+        console.log(`[VIMEO] Atualizando registro no banco de dados com dados processados...`);
+        const fileName = `transcript-${videoId}-${track.language}.txt`;
+        
+        await pool.query(
+          `UPDATE videos SET status = $1, file_name = $2, transcript = $3, structured_transcript = $4, questions_answers = $5 WHERE id = $6`,
+          [
+            'completed',
+            fileName,
+            txtFormatted,
+            enhancedText || null,
+            qaText || null,
+            videoId_db
+          ]
+        );
+        console.log(`[VIMEO] Registro atualizado no banco de dados com sucesso`);
+      } catch (error) {
+        console.error("[VIMEO] Erro ao atualizar registro no banco de dados:", error.message);
+      }
+    } else {
+      try {
+        console.log(`[VIMEO] Criando registro no banco de dados (fallback)...`);
+        const videoId_db_uuid = uuidv4();
+        const fileName = `transcript-${videoId}-${track.language}.txt`;
+        
+        await pool.query(
+          `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            videoId_db_uuid,
+            fileName,
+            'vimeo',
+            videoUrl,
+            'completed',
+            txtFormatted,
+            enhancedText || null,
+            qaText || null
+          ]
+        );
+        
+        videoId_db = videoId_db_uuid;
+        console.log(`[VIMEO] Registro criado no banco de dados com ID: ${videoId_db_uuid}`);
+      } catch (error) {
+        console.error("[VIMEO] Erro ao criar registro no banco de dados:", error.message);
+      }
     }
   } catch (fetchError) {
     console.error(`[VIMEO] Erro ao fazer requisição ou processar:`, fetchError);
     const error = `Erro ao fazer requisição para API do Vimeo: ${fetchError.message}`;
+    
+    if (videoId_db) {
+      try {
+        await pool.query(
+          `UPDATE videos SET status = $1, transcript = $2 WHERE id = $3`,
+          ['error', error, videoId_db]
+        );
+      } catch (dbError) {
+        console.error("[VIMEO] Erro ao atualizar status de erro no banco:", dbError.message);
+      }
+    }
+    
     return { success: false, error };
   }
   
@@ -359,13 +411,25 @@ async function downloadTranscript(videoUrl) {
   };
 }
 
-async function downloadAndTranscribeVideo(videoId, videoUrl) {
+async function downloadAndTranscribeVideo(videoId, videoUrl, existingVideoIdDb = null) {
   try {
     console.log(`[VIMEO] Iniciando download e transcrição do vídeo ${videoId}...`);
     
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.length < 10) {
       const error = "OPENAI_API_KEY ausente ou inválida. É necessária para transcrição com Whisper.";
       console.error(`[VIMEO] ${error}`);
+      
+      if (existingVideoIdDb) {
+        try {
+          await pool.query(
+            `UPDATE videos SET status = $1, transcript = $2 WHERE id = $3`,
+            ['error', error, existingVideoIdDb]
+          );
+        } catch (dbError) {
+          console.error("[VIMEO] Erro ao atualizar status de erro no banco:", dbError.message);
+        }
+      }
+      
       return { success: false, error };
     }
 
@@ -375,15 +439,45 @@ async function downloadAndTranscribeVideo(videoId, videoUrl) {
 
     console.log(`[VIMEO] Vídeo baixado. Iniciando transcrição com Whisper...`);
     
-    // Usa a função existente de processamento de vídeo
-    const result = await processVideoFile(filePath, fileName);
-    
-    // Atualiza o source_type e source_url para indicar que veio do Vimeo
-    if (result.videoId) {
-      await pool.query(
-        `UPDATE videos SET source_type = $1, source_url = $2 WHERE id = $3`,
-        ['vimeo', videoUrl, result.videoId]
-      );
+    let result;
+    if (existingVideoIdDb) {
+      result = await processVideoFile(filePath, fileName);
+      
+      if (result.videoId && result.videoId !== existingVideoIdDb) {
+        try {
+          await pool.query(`DELETE FROM videos WHERE id = $1`, [result.videoId]);
+        } catch (deleteError) {
+          console.error("[VIMEO] Erro ao deletar registro duplicado:", deleteError.message);
+        }
+      }
+      
+      try {
+        await pool.query(
+          `UPDATE videos SET status = $1, source_type = $2, source_url = $3, transcript = $4, structured_transcript = $5, questions_answers = $6 WHERE id = $7`,
+          [
+            'completed',
+            'vimeo',
+            videoUrl,
+            result.transcript || null,
+            result.structuredTranscript || null,
+            result.questionsAnswers || null,
+            existingVideoIdDb
+          ]
+        );
+        result.videoId = existingVideoIdDb;
+        console.log(`[VIMEO] Registro existente atualizado com dados processados`);
+      } catch (updateError) {
+        console.error("[VIMEO] Erro ao atualizar registro existente:", updateError.message);
+          }
+    } else {
+      result = await processVideoFile(filePath, fileName);
+      
+      if (result.videoId) {
+        await pool.query(
+          `UPDATE videos SET source_type = $1, source_url = $2 WHERE id = $3`,
+          ['vimeo', videoUrl, result.videoId]
+        );
+      }
     }
     
     console.log(`[VIMEO] Transcrição concluída com sucesso usando Whisper!`);
@@ -398,6 +492,18 @@ async function downloadAndTranscribeVideo(videoId, videoUrl) {
     };
   } catch (error) {
     console.error(`[VIMEO] Erro ao baixar e transcrever vídeo:`, error);
+    
+    if (existingVideoIdDb) {
+      try {
+        await pool.query(
+          `UPDATE videos SET status = $1, transcript = $2 WHERE id = $3`,
+          ['error', `Erro ao baixar e transcrever vídeo: ${error.message}`, existingVideoIdDb]
+        );
+      } catch (dbError) {
+        console.error("[VIMEO] Erro ao atualizar status de erro no banco:", dbError.message);
+      }
+    }
+    
     return { 
       success: false, 
       error: `Erro ao baixar e transcrever vídeo: ${error.message}` 
