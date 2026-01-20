@@ -30,10 +30,10 @@ const pool = new Pool({
 
 pool.query('SELECT NOW()')
   .then(() => {
-    console.log('✅ Conectado ao banco de dados PostgreSQL');
+    console.log('Conectado ao banco de dados PostgreSQL');
   })
   .catch(err => {
-    console.error('❌ Erro ao conectar ao banco de dados:', err.message);
+    console.error('Erro ao conectar ao banco de dados:', err.message);
   });
 
 export default pool;

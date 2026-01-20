@@ -23,7 +23,7 @@ async function setupFFmpegPath() {
     } catch (e) {
         for (const knownPath of KNOWN_FFMPEG_PATHS) {
             if (fs.existsSync(knownPath)) {
-                console.log(`💡 FFmpeg encontrado em caminho alternativo: ${knownPath}`);
+                console.log(`FFmpeg encontrado em caminho alternativo: ${knownPath}`);
                 ffmpeg.setFfmpegPath(knownPath);
                 
                 const ffprobePath = knownPath.replace('ffmpeg.exe', 'ffprobe.exe');
@@ -80,13 +80,13 @@ export async function splitAudioFile(inputPath, outputDir, baseName) {
       return [inputPath];
     }
 
-    console.log('✅ FFmpeg encontrado. Dividindo arquivo em chunks menores...');
+    console.log('FFmpeg encontrado. Dividindo arquivo em chunks menores...');
     
     let totalDuration;
     try {
       totalDuration = await getAudioDuration(inputPath);
     } catch (error) {
-      console.warn('⚠️  Erro ao obter duração do áudio. Tentando processar arquivo completo...');
+      console.warn('Erro ao obter duração do áudio. Tentando processar arquivo completo...');
       return [inputPath];
     }
     
@@ -145,14 +145,14 @@ export async function splitAudioFile(inputPath, outputDir, baseName) {
       });
     }
     
-    console.log(`✅ Arquivo dividido em ${actualChunks.length} chunks`);
+    console.log(`Arquivo dividido em ${actualChunks.length} chunks`);
     return actualChunks;
     
   } catch (error) {
     console.error('Erro ao dividir arquivo de áudio:', error);
     
     if (fs.existsSync(inputPath)) {
-      console.warn('⚠️  Tentando processar arquivo original como fallback...');
+      console.warn('Tentando processar arquivo original como fallback...');
       return [inputPath];
     }
     

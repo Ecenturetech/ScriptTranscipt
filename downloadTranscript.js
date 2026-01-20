@@ -4,9 +4,11 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { v4 as uuidv4 } from "uuid";
+import axios from "axios";
 import generateQA, { generateEnhancedTranscript } from "./ai_qa_generator.js";
 import { enrichTranscriptFromCatalog } from "./culture_enricher.js";
 import { applyDictionaryReplacements } from "./services/videoTranscription.js";
+import { processVideoFile } from "./services/videoTranscription.js";
 import pool from "./db/connection.js";
 import { getStoragePath } from "./utils/storage.js";
 
@@ -19,6 +21,96 @@ function extractVideoId(url) {
   const regex = /vimeo\.com\/(\d+)/;
   const match = url.match(regex);
   return match ? match[1] : null;
+}
+
+async function downloadVideoFromVimeo(videoId, fileName) {
+  try {
+    console.log(`[VIMEO] Obtendo informações do vídeo ${videoId} para download...`);
+    
+    // Primeiro, obtemos informações sobre o vídeo
+    const videoInfoUrl = `https://api.vimeo.com/videos/${videoId}`;
+    const videoInfoResponse = await fetch(videoInfoUrl, {
+      headers: { Authorization: `Bearer ${process.env.VIMEO_TOKEN}` },
+    });
+
+    if (!videoInfoResponse.ok) {
+      const errorText = await videoInfoResponse.text();
+      console.error(`[VIMEO] Erro ao obter informações do vídeo: ${videoInfoResponse.status} - ${errorText}`);
+      throw new Error(`Erro ao obter informações do vídeo: ${videoInfoResponse.status} ${videoInfoResponse.statusText}`);
+    }
+
+    const videoInfo = await videoInfoResponse.json();
+    
+    if (videoInfo.error) {
+      throw new Error(videoInfo.developer_message || videoInfo.error || "Erro ao obter informações do vídeo");
+    }
+
+    // Tentamos obter a URL de download mais alta qualidade
+    let downloadUrl = null;
+    if (videoInfo.download && videoInfo.download.length > 0) {
+      // Ordena por qualidade e pega a maior
+      const sortedDownloads = videoInfo.download.sort((a, b) => {
+        const qualityA = parseInt(a.quality) || 0;
+        const qualityB = parseInt(b.quality) || 0;
+        return qualityB - qualityA;
+      });
+      downloadUrl = sortedDownloads[0].link;
+      console.log(`[VIMEO] URL de download encontrada (qualidade: ${sortedDownloads[0].quality})`);
+    } else if (videoInfo.files && videoInfo.files.length > 0) {
+      // Alternativa: usar files array
+      const sortedFiles = videoInfo.files.sort((a, b) => {
+        const widthA = parseInt(a.width) || 0;
+        const widthB = parseInt(b.width) || 0;
+        return widthB - widthA;
+      });
+      downloadUrl = sortedFiles[0].link;
+      console.log(`[VIMEO] URL de download encontrada via files (resolução: ${sortedFiles[0].width}x${sortedFiles[0].height})`);
+    }
+
+    if (!downloadUrl) {
+      throw new Error("URL de download não disponível. O vídeo pode estar protegido ou privado.");
+    }
+
+    console.log(`[VIMEO] Baixando vídeo de: ${downloadUrl.substring(0, 100)}...`);
+    
+    const storagePath = getStoragePath();
+    const filePath = path.join(storagePath, fileName);
+    
+    const response = await axios({
+      method: 'GET',
+      url: downloadUrl,
+      responseType: 'stream',
+      headers: {
+        Authorization: `Bearer ${process.env.VIMEO_TOKEN}`,
+      },
+      timeout: 600000, // 10 minutos
+      maxRedirects: 5,
+      validateStatus: function (status) {
+        return status >= 200 && status < 400;
+      }
+    });
+    
+    const writer = fs.createWriteStream(filePath);
+    response.data.pipe(writer);
+    
+    return new Promise((resolve, reject) => {
+      writer.on('finish', () => {
+        console.log(`[VIMEO] Vídeo baixado com sucesso: ${filePath}`);
+        resolve(filePath);
+      });
+      writer.on('error', (error) => {
+        console.error(`[VIMEO] Erro ao escrever arquivo:`, error);
+        reject(error);
+      });
+      response.data.on('error', (error) => {
+        console.error(`[VIMEO] Erro ao baixar vídeo:`, error);
+        reject(error);
+      });
+    });
+  } catch (error) {
+    console.error(`[VIMEO] Erro ao baixar vídeo do Vimeo:`, error);
+    throw error;
+  }
 }
 
 function vttToVimeoStyle(vtt) {
@@ -41,47 +133,88 @@ function vttToVimeoStyle(vtt) {
 }
 
 async function downloadTranscript(videoUrl) {
+  console.log(`[VIMEO] Processando URL: ${videoUrl}`);
+  
   const videoId = extractVideoId(videoUrl);
   if (!videoId) {
-    const error = "URL inválida.";
+    const error = `URL inválida: ${videoUrl}. Formato esperado: https://vimeo.com/VIDEO_ID`;
+    console.error(`[VIMEO] ${error}`);
+    return { success: false, error };
+  }
+
+  console.log(`[VIMEO] Video ID extraído: ${videoId}`);
+
+  if (!process.env.VIMEO_TOKEN) {
+    const error = "VIMEO_TOKEN não configurado no arquivo .env";
+    console.error(`[VIMEO] ${error}`);
     return { success: false, error };
   }
 
   const apiUrl = `https://api.vimeo.com/videos/${videoId}/texttracks`;
+  console.log(`[VIMEO] Fazendo requisição para: ${apiUrl}`);
 
-  const response = await fetch(apiUrl, {
-    headers: { Authorization: `Bearer ${process.env.VIMEO_TOKEN}` },
-  });
+  let track;
+  try {
+    const response = await fetch(apiUrl, {
+      headers: { Authorization: `Bearer ${process.env.VIMEO_TOKEN}` },
+    });
 
-  const data = await response.json();
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[VIMEO] Erro na resposta da API: ${response.status} - ${errorText}`);
+      const error = `Erro ao acessar API do Vimeo: ${response.status} ${response.statusText}`;
+      return { success: false, error };
+    }
 
-  if (data.error) {
-    const error = data.developer_message || data.error || "Erro ao acessar API do Vimeo";
-    return { success: false, error };
-  }
+    const data = await response.json();
 
-  if (!data.data || data.data.length === 0) {
-    const error = "Nenhuma transcrição encontrada!";
-    return { success: false, error };
-  }
+    if (data.error) {
+      const error = data.developer_message || data.error || "Erro ao acessar API do Vimeo";
+      console.error(`[VIMEO] Erro retornado pela API: ${error}`);
+      return { success: false, error };
+    }
 
-  let track =
-    data.data.find((t) => t.language === "pt-BR") ||
-    data.data.find((t) => t.language === "pt") ||
-    data.data.find((t) => t.language === "pt-x-autogen") ||
-    data.data.find((t) => t.language === "es") ||
-    data.data.find((t) => t.language === "es-ES") ||
-    data.data.find((t) => t.language === "es-x-autogen");
+    // Se não há legendas disponíveis, tenta baixar o vídeo e transcrever com Whisper
+    if (!data.data || data.data.length === 0) {
+      console.log(`[VIMEO] Nenhuma legenda encontrada. Fazendo fallback: baixando vídeo e transcrevendo com Whisper...`);
+      return await downloadAndTranscribeVideo(videoId, videoUrl);
+    }
 
-  if (!track) {
-    const error = "Não existe transcrição em português ou espanhol neste vídeo!";
-    return { success: false, error };
-  }
+    console.log(`[VIMEO] Encontradas ${data.data.length} transcrição(ões) disponível(is)`);
 
-  const vttResponse = await fetch(track.link);
-  const vttText = await vttResponse.text();
+    const availableLanguages = data.data.map(t => t.language).join(', ');
+    console.log(`[VIMEO] Idiomas disponíveis: ${availableLanguages}`);
 
-  let txtFormatted = vttToVimeoStyle(vttText);
+    track =
+      data.data.find((t) => t.language === "pt-BR") ||
+      data.data.find((t) => t.language === "pt") ||
+      data.data.find((t) => t.language === "pt-x-autogen") ||
+      data.data.find((t) => t.language === "es") ||
+      data.data.find((t) => t.language === "es-ES") ||
+      data.data.find((t) => t.language === "es-x-autogen");
+
+    // Se não há legenda em português/espanhol, tenta baixar o vídeo e transcrever
+    if (!track) {
+      console.log(`[VIMEO] Nenhuma legenda em português ou espanhol encontrada. Idiomas disponíveis: ${availableLanguages}`);
+      console.log(`[VIMEO] Fazendo fallback: baixando vídeo e transcrevendo com Whisper...`);
+      return await downloadAndTranscribeVideo(videoId, videoUrl);
+    }
+
+    console.log(`[VIMEO] Usando transcrição no idioma: ${track.language}`);
+
+    console.log(`[VIMEO] Baixando arquivo VTT de: ${track.link}`);
+    const vttResponse = await fetch(track.link);
+    
+    if (!vttResponse.ok) {
+      const error = `Erro ao baixar arquivo VTT: ${vttResponse.status} ${vttResponse.statusText}`;
+      console.error(`[VIMEO] ${error}`);
+      return { success: false, error };
+    }
+    
+    const vttText = await vttResponse.text();
+    console.log(`[VIMEO] Arquivo VTT baixado com sucesso (${vttText.length} caracteres)`);
+
+    let txtFormatted = vttToVimeoStyle(vttText);
   
   txtFormatted = await applyDictionaryReplacements(txtFormatted);
 
@@ -179,29 +312,37 @@ async function downloadTranscript(videoUrl) {
 
   const relativePath = path.relative(__dirname, storagePath).replace(/\\/g, '/');
   
-  let videoId_db = null;
-  try {
-    const videoId_db_uuid = uuidv4();
-    const fileName = `transcript-${videoId}-${track.language}.txt`;
-    
-    await pool.query(
-      `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        videoId_db_uuid,
-        fileName,
-        'vimeo',
-        videoUrl,
-        'completed',
-        txtFormatted,
-        enhancedText || null,
-        qaText || null
-      ]
-    );
-    
-    videoId_db = videoId_db_uuid;
-  } catch (error) {
-    console.error("Erro ao salvar no banco de dados:", error.message);
+    let videoId_db = null;
+    try {
+      console.log(`[VIMEO] Salvando no banco de dados...`);
+      const videoId_db_uuid = uuidv4();
+      const fileName = `transcript-${videoId}-${track.language}.txt`;
+      
+      await pool.query(
+        `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          videoId_db_uuid,
+          fileName,
+          'vimeo',
+          videoUrl,
+          'completed',
+          txtFormatted,
+          enhancedText || null,
+          qaText || null
+        ]
+      );
+      
+      videoId_db = videoId_db_uuid;
+      console.log(`[VIMEO] Salvo no banco de dados com ID: ${videoId_db_uuid}`);
+    } catch (error) {
+      console.error("[VIMEO] Erro ao salvar no banco de dados:", error.message);
+      throw error;
+    }
+  } catch (fetchError) {
+    console.error(`[VIMEO] Erro ao fazer requisição ou processar:`, fetchError);
+    const error = `Erro ao fazer requisição para API do Vimeo: ${fetchError.message}`;
+    return { success: false, error };
   }
   
   return {
@@ -216,6 +357,52 @@ async function downloadTranscript(videoUrl) {
     structuredTranscript: enhancedText || null,
     questionsAnswers: qaText || null
   };
+}
+
+async function downloadAndTranscribeVideo(videoId, videoUrl) {
+  try {
+    console.log(`[VIMEO] Iniciando download e transcrição do vídeo ${videoId}...`);
+    
+    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.length < 10) {
+      const error = "OPENAI_API_KEY ausente ou inválida. É necessária para transcrição com Whisper.";
+      console.error(`[VIMEO] ${error}`);
+      return { success: false, error };
+    }
+
+    const storagePath = getStoragePath();
+    const fileName = `vimeo-${videoId}.mp4`;
+    const filePath = await downloadVideoFromVimeo(videoId, fileName);
+
+    console.log(`[VIMEO] Vídeo baixado. Iniciando transcrição com Whisper...`);
+    
+    // Usa a função existente de processamento de vídeo
+    const result = await processVideoFile(filePath, fileName);
+    
+    // Atualiza o source_type e source_url para indicar que veio do Vimeo
+    if (result.videoId) {
+      await pool.query(
+        `UPDATE videos SET source_type = $1, source_url = $2 WHERE id = $3`,
+        ['vimeo', videoUrl, result.videoId]
+      );
+    }
+    
+    console.log(`[VIMEO] Transcrição concluída com sucesso usando Whisper!`);
+    
+    return {
+      success: true,
+      videoId: result.videoId,
+      transcript: result.transcript,
+      structuredTranscript: result.structuredTranscript,
+      questionsAnswers: result.questionsAnswers,
+      message: 'Vídeo baixado e transcrito com Whisper (fallback - sem legendas disponíveis)'
+    };
+  } catch (error) {
+    console.error(`[VIMEO] Erro ao baixar e transcrever vídeo:`, error);
+    return { 
+      success: false, 
+      error: `Erro ao baixar e transcrever vídeo: ${error.message}` 
+    };
+  }
 }
 
 export { downloadTranscript };

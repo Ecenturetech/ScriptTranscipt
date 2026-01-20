@@ -10,6 +10,12 @@ import { enrichTranscriptFromCatalog } from '../culture_enricher.js';
 import pool from '../db/connection.js';
 import { getStoragePath } from '../utils/storage.js';
 import { splitAudioFile, cleanupChunks } from '../utils/audioSplitter.js';
+import ffmpeg from 'fluent-ffmpeg';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import os from 'os';
+
+const execAsync = promisify(exec);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +25,82 @@ dotenv.config({ path: envPath });
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+const SUPPORTED_FORMATS = ['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'];
+
+const KNOWN_FFMPEG_PATHS = [
+  path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'WinGet', 'Packages', 'Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe', 'ffmpeg-8.0.1-full_build', 'bin', 'ffmpeg.exe'),
+  path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'WinGet', 'Links', 'ffmpeg.exe'),
+  'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',
+];
+
+async function setupFFmpegPath() {
+  try {
+    await execAsync('ffmpeg -version');
+    return true;
+  } catch (e) {
+    for (const knownPath of KNOWN_FFMPEG_PATHS) {
+      if (fs.existsSync(knownPath)) {
+        console.log(`💡 FFmpeg encontrado em caminho alternativo: ${knownPath}`);
+        ffmpeg.setFfmpegPath(knownPath);
+        
+        const ffprobePath = knownPath.replace('ffmpeg.exe', 'ffprobe.exe');
+        if (fs.existsSync(ffprobePath)) {
+          ffmpeg.setFfprobePath(ffprobePath);
+        }
+        
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+async function checkFFmpegAvailable() {
+  return await setupFFmpegPath();
+}
+
+function isFormatSupported(filePath) {
+  const ext = path.extname(filePath).toLowerCase().replace('.', '');
+  return SUPPORTED_FORMATS.includes(ext);
+}
+
+async function convertToSupportedFormat(inputPath, outputDir, mediaId, isVideo = false) {
+  const ffmpegAvailable = await checkFFmpegAvailable();
+  
+  if (!ffmpegAvailable) {
+    throw new Error(
+      'Formato de arquivo não suportado pela API Whisper e FFmpeg não está disponível. ' +
+      'Formatos suportados: ' + SUPPORTED_FORMATS.join(', ') + '. ' +
+      'Instale o FFmpeg para conversão automática: https://ffmpeg.org/download.html'
+    );
+  }
+
+  const outputPath = path.join(outputDir, `converted-${mediaId}.mp3`);
+  
+  return new Promise((resolve, reject) => {
+    console.log(`Convertendo arquivo para formato suportado (MP3)...`);
+    
+    const command = ffmpeg(inputPath);
+    
+    command
+      .audioCodec('libmp3lame')
+      .audioBitrate(128)
+      .format('mp3')
+      .output(outputPath);
+    
+    command
+      .on('end', () => {
+        console.log(`Conversão concluída: ${path.basename(outputPath)}`);
+        resolve(outputPath);
+      })
+      .on('error', (err) => {
+        console.error('Erro ao converter arquivo:', err);
+        reject(new Error(`Erro ao converter arquivo: ${err.message}`));
+      })
+      .run();
+  });
+}
 
 export async function applyDictionaryReplacements(text) {
   try {
@@ -104,20 +186,33 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
     
     let transcriptText = '';
     let chunkPaths = [];
+    let convertedFilePath = savedFilePath;
+    let needsCleanup = false;
+    
     try {
-      const fileStats = fs.statSync(savedFilePath);
+      if (!isFormatSupported(savedFilePath)) {
+        const fileExtension = path.extname(savedFilePath).toLowerCase();
+        console.log(`Formato ${fileExtension} não é suportado pela API Whisper. Convertendo...`);
+        
+        const isVideo = tableName === 'videos';
+        convertedFilePath = await convertToSupportedFormat(savedFilePath, storagePath, mediaId, isVideo);
+        needsCleanup = true;
+        console.log(`Arquivo convertido para: ${path.basename(convertedFilePath)}`);
+      }
+      
+      const fileStats = fs.statSync(convertedFilePath);
       const fileSizeMB = fileStats.size / (1024 * 1024);
       
       if (fileSizeMB > 25) {
         console.log(`Arquivo maior que 25MB (${fileSizeMB.toFixed(2)} MB). Tentando dividir em chunks menores...`);
-        chunkPaths = await splitAudioFile(savedFilePath, storagePath, mediaId);
+        chunkPaths = await splitAudioFile(convertedFilePath, storagePath, mediaId);
         
-        if (chunkPaths.length === 1 && chunkPaths[0] === savedFilePath && fileSizeMB > 25) {
+        if (chunkPaths.length === 1 && chunkPaths[0] === convertedFilePath && fileSizeMB > 25) {
           console.warn('Arquivo grande detectado mas não foi possível dividir (ffmpeg pode não estar instalado)');
           console.warn('Tentando processar mesmo assim. Se falhar, instale o FFmpeg: https://ffmpeg.org/download.html');
         }
       } else {
-        chunkPaths = [savedFilePath];
+        chunkPaths = [convertedFilePath];
       }
       
       const transcriptParts = [];
@@ -179,15 +274,34 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
         [transcriptText, dbId]
       );
       
-      if (chunkPaths.length > 1 || (chunkPaths.length === 1 && chunkPaths[0] !== savedFilePath)) {
-        const tempChunks = chunkPaths.filter(p => p !== savedFilePath);
+      const filesToKeep = [savedFilePath];
+      const tempChunks = chunkPaths.filter(p => !filesToKeep.includes(p));
+      
+      if (tempChunks.length > 0) {
         cleanupChunks(tempChunks);
+      }
+      
+      if (needsCleanup && convertedFilePath !== savedFilePath && fs.existsSync(convertedFilePath)) {
+        try {
+          fs.unlinkSync(convertedFilePath);
+          console.log(`Arquivo convertido temporário removido: ${path.basename(convertedFilePath)}`);
+        } catch (cleanupError) {
+          console.warn(`Erro ao remover arquivo convertido: ${cleanupError.message}`);
+        }
       }
       
     } catch (transcriptionError) {
       if (chunkPaths.length > 0) {
-        const tempChunks = chunkPaths.filter(p => p !== savedFilePath);
+        const tempChunks = chunkPaths.filter(p => p !== savedFilePath && p !== convertedFilePath);
         cleanupChunks(tempChunks);
+      }
+      
+      if (needsCleanup && convertedFilePath !== savedFilePath && fs.existsSync(convertedFilePath)) {
+        try {
+          fs.unlinkSync(convertedFilePath);
+        } catch (cleanupError) {
+          console.warn(`Erro ao remover arquivo convertido após erro: ${cleanupError.message}`);
+        }
       }
       
       const errorMessage = `Erro na transcrição: ${transcriptionError.message}`;

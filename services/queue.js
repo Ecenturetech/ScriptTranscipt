@@ -58,7 +58,7 @@ class TranscriptionQueue extends EventEmitter {
     
     this.emit('jobStarted', job);
 
-    console.log(`🔄 Processando job ${job.id} (${job.type}) - ${this.queue.filter(j => j.status === 'pending').length} pendente(s)`);
+    console.log(`Processando job ${job.id} (${job.type}) - ${this.queue.filter(j => j.status === 'pending').length} pendente(s)`);
 
     try {
       let result;
@@ -72,6 +72,9 @@ class TranscriptionQueue extends EventEmitter {
       } else if (job.type === 'url') {
         const { videoUrl } = job.data;
         result = await downloadTranscript(videoUrl);
+        if (result && result.success === false) {
+          throw new Error(result.error || 'Erro ao processar URL do Vimeo');
+        }
       } else if (job.type === 'pdf') {
         const { filePath, fileName, forceVision } = job.data;
         result = await processPDFFile(filePath, fileName, forceVision);
@@ -86,7 +89,7 @@ class TranscriptionQueue extends EventEmitter {
       job.completedAt = new Date();
       job.result = result;
       
-      console.log(`✅ Job ${job.id} concluído com sucesso`);
+      console.log(`Job ${job.id} concluído com sucesso`);
       this.emit('jobCompleted', job);
 
     } catch (error) {
@@ -94,7 +97,7 @@ class TranscriptionQueue extends EventEmitter {
       job.completedAt = new Date();
       job.error = error.message;
       
-      console.error(`❌ Erro no job ${job.id}:`, error.message);
+      console.error(`Erro no job ${job.id}:`, error.message);
       this.emit('jobError', job, error);
     } finally {
       this.currentJob = null;
