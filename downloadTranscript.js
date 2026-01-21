@@ -128,6 +128,44 @@ function vttToVimeoStyle(vtt) {
   return rawText.join(" ");
 }
 
+function sanitizeFileName(name) {
+  if (!name) return '';
+  // Remove caracteres especiais e substitui espaços por hífens
+  return name
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '') // Remove caracteres inválidos para nomes de arquivo
+    .replace(/\s+/g, '-') // Substitui espaços múltiplos por hífen
+    .replace(/-+/g, '-') // Remove hífens duplicados
+    .replace(/^-|-$/g, '') // Remove hífens no início e fim
+    .substring(0, 100); // Limita o tamanho
+}
+
+async function getVimeoVideoInfo(videoId) {
+  try {
+    const videoInfoUrl = `https://api.vimeo.com/videos/${videoId}`;
+    const videoInfoResponse = await fetch(videoInfoUrl, {
+      headers: { Authorization: `Bearer ${process.env.VIMEO_TOKEN}` },
+    });
+
+    if (!videoInfoResponse.ok) {
+      const errorText = await videoInfoResponse.text();
+      console.error(`[VIMEO] Erro ao obter informações do vídeo: ${videoInfoResponse.status} - ${errorText}`);
+      return null;
+    }
+
+    const videoInfo = await videoInfoResponse.json();
+    
+    if (videoInfo.error) {
+      console.error(`[VIMEO] Erro na resposta: ${videoInfo.developer_message || videoInfo.error}`);
+      return null;
+    }
+
+    return videoInfo;
+  } catch (error) {
+    console.error(`[VIMEO] Erro ao buscar informações do vídeo:`, error.message);
+    return null;
+  }
+}
+
 async function downloadTranscript(videoUrl) {
   console.log(`[VIMEO] Processando URL: ${videoUrl}`);
   
@@ -146,11 +184,27 @@ async function downloadTranscript(videoUrl) {
     return { success: false, error };
   }
 
+  // Buscar informações do vídeo para obter o título
+  let videoTitle = null;
+  const videoInfo = await getVimeoVideoInfo(videoId);
+  if (videoInfo && videoInfo.name) {
+    videoTitle = videoInfo.name;
+    console.log(`[VIMEO] Título do vídeo encontrado: ${videoTitle}`);
+  } else {
+    console.log(`[VIMEO] Título do vídeo não encontrado, usando ID como fallback`);
+  }
+
+  // Criar nome do arquivo com título ou fallback para ID
+  const sanitizedTitle = videoTitle ? sanitizeFileName(videoTitle) : null;
+  const baseFileName = sanitizedTitle 
+    ? `${sanitizedTitle}-${videoId}` 
+    : `vimeo-${videoId}`;
+
   let videoId_db = null;
   try {
     console.log(`[VIMEO] Criando registro no banco de dados com status 'processing'...`);
     const videoId_db_uuid = uuidv4();
-    const fileName = `vimeo-${videoId}.txt`;
+    const fileName = `${baseFileName}.txt`;
     
     await pool.query(
       `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
@@ -240,8 +294,8 @@ async function downloadTranscript(videoUrl) {
 
   const storagePath = getStoragePath();
 
-  const outputTxtName = `transcript-${videoId}-${track.language}.txt`;
-  const outputVttName = `transcript-${videoId}-${track.language}.vtt`;
+  const outputTxtName = `${baseFileName}-${track.language}.txt`;
+  const outputVttName = `${baseFileName}-${track.language}.vtt`;
 
   const outputTxtPath = path.join(storagePath, outputTxtName);
   const outputVttPath = path.join(storagePath, outputVttName);
@@ -278,6 +332,7 @@ async function downloadTranscript(videoUrl) {
   const consolidatedContent = [
     "=".repeat(80),
     "TRANSCRIÇÃO COMPLETA",
+    videoTitle ? `Título: ${videoTitle}` : `Video ID: ${videoId}`,
     `Video ID: ${videoId}`,
     `Idioma: ${track.language}`,
     `Data: ${new Date().toLocaleString('pt-BR')}`,
@@ -335,7 +390,7 @@ async function downloadTranscript(videoUrl) {
     if (videoId_db) {
       try {
         console.log(`[VIMEO] Atualizando registro no banco de dados com dados processados...`);
-        const fileName = `transcript-${videoId}-${track.language}.txt`;
+        const fileName = `${baseFileName}-${track.language}.txt`;
         
         await pool.query(
           `UPDATE videos SET status = $1, file_name = $2, transcript = $3, structured_transcript = $4, questions_answers = $5 WHERE id = $6`,
@@ -356,7 +411,7 @@ async function downloadTranscript(videoUrl) {
       try {
         console.log(`[VIMEO] Criando registro no banco de dados (fallback)...`);
         const videoId_db_uuid = uuidv4();
-        const fileName = `transcript-${videoId}-${track.language}.txt`;
+        const fileName = `${baseFileName}-${track.language}.txt`;
         
         await pool.query(
           `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
@@ -433,8 +488,22 @@ async function downloadAndTranscribeVideo(videoId, videoUrl, existingVideoIdDb =
       return { success: false, error };
     }
 
+    // Buscar informações do vídeo para obter o título
+    let videoTitle = null;
+    const videoInfo = await getVimeoVideoInfo(videoId);
+    if (videoInfo && videoInfo.name) {
+      videoTitle = videoInfo.name;
+      console.log(`[VIMEO] Título do vídeo encontrado: ${videoTitle}`);
+    }
+
+    // Criar nome do arquivo com título ou fallback para ID
+    const sanitizedTitle = videoTitle ? sanitizeFileName(videoTitle) : null;
+    const baseFileName = sanitizedTitle 
+      ? `${sanitizedTitle}-${videoId}` 
+      : `vimeo-${videoId}`;
+
     const storagePath = getStoragePath();
-    const fileName = `vimeo-${videoId}.mp4`;
+    const fileName = `${baseFileName}.mp4`;
     const filePath = await downloadVideoFromVimeo(videoId, fileName);
 
     console.log(`[VIMEO] Vídeo baixado. Iniciando transcrição com Whisper...`);
