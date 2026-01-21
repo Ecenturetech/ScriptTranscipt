@@ -377,7 +377,11 @@ export async function processPDFFile(filePath, fileName, forceVision = false) {
     try {
       if (forceVision) {
         console.log(`[PDF] Extração via Visão forçada para: ${fileName}`);
-        extractedText = await extractTextViaVision(savedFilePath);
+        try {
+          extractedText = await extractTextViaVision(savedFilePath);
+        } catch (visionError) {
+          extractedText = await extractRawTextFromPDF(savedFilePath);
+        }
       } else {
         extractedText = await extractRawTextFromPDF(savedFilePath);
       }
