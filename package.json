@@ -7,6 +7,7 @@
     "@langchain/community": "^1.0.4",
     "@langchain/core": "^1.0.6",
     "@langchain/openai": "^1.1.2",
+    "@thednp/dommatrix": "^3.0.2",
     "axios": "^1.13.2",
     "canvas": "^3.2.0",
     "cors": "^2.8.5",

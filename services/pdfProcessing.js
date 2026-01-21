@@ -1,11 +1,11 @@
 import '../utils/polyfills.js';
+import { loadDOMMatrixPolyfill } from '../utils/polyfills.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
 import pdf from 'pdf-parse/lib/pdf-parse.js';
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createCanvas, Image } from 'canvas';
 import { PromptTemplate } from "@langchain/core/prompts";
 
@@ -92,6 +92,26 @@ async function extractRawTextFromPDF(filePath) {
 async function extractTextViaVision(filePath) {
   try {
     console.log(`[PDF-VISION] Iniciando extração visual para: ${filePath}`);
+    
+    await loadDOMMatrixPolyfill();
+    
+    if (typeof globalThis.DOMMatrix === 'undefined') {
+      throw new Error('DOMMatrix polyfill não foi carregado corretamente');
+    }
+    
+    try {
+      const testMatrix = new globalThis.DOMMatrix();
+      console.log('[PDF-VISION] DOMMatrix disponível e funcional:', typeof globalThis.DOMMatrix);
+      
+      if (typeof global !== 'undefined' && !global.DOMMatrix) {
+        global.DOMMatrix = globalThis.DOMMatrix;
+      }
+    } catch (testError) {
+      console.error('[PDF-VISION] Erro ao testar DOMMatrix:', testError);
+      throw new Error(`DOMMatrix não é uma função construtora válida: ${testError.message}`);
+    }
+    
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     
     const data = new Uint8Array(fs.readFileSync(filePath));
     
