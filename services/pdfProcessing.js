@@ -42,6 +42,8 @@ import { resolve } from 'path';
 import pool from '../db/connection.js';
 import { getStoragePath } from '../utils/storage.js';
 import { applyDictionaryReplacements } from './videoTranscription.js';
+import { improveTextReadability } from '../ai_qa_generator.js';
+import { generateElyMetadata } from './metadataGenerator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -373,6 +375,7 @@ export async function processPDFFile(filePath, fileName, forceVision = false) {
     
     let extractedText = '';
     let structuredSummary = '';
+    let elyMetadata = '';
     
     try {
       if (forceVision) {
@@ -389,6 +392,14 @@ export async function processPDFFile(filePath, fileName, forceVision = false) {
       if (!extractedText || extractedText.trim().length === 0) {
         throw new Error('Nenhum texto foi extraído do PDF (mesmo após tentativa com Visão)');
       }
+
+      // Melhorar legibilidade (pontuação e parágrafos) do texto original
+      console.log('[PDF] Melhorando legibilidade do texto extraído...');
+      try {
+        extractedText = await improveTextReadability(extractedText);
+      } catch (improveError) {
+        console.warn('[PDF] Falha ao melhorar legibilidade, mantendo original:', improveError.message);
+      }
       
       extractedText = await applyDictionaryReplacements(extractedText);
       
@@ -396,6 +407,16 @@ export async function processPDFFile(filePath, fileName, forceVision = false) {
         `UPDATE pdfs SET extracted_text = $1 WHERE id = $2`,
         [extractedText, pdfId_db]
       );
+      
+      // Gerar metadados ELY
+      console.log('[PDF] Gerando metadados ELY...');
+      try {
+        elyMetadata = await generateElyMetadata(extractedText, fileName);
+        elyMetadata = await applyDictionaryReplacements(elyMetadata);
+      } catch (metadataError) {
+        console.error('[PDF] Erro ao gerar metadados ELY:', metadataError);
+        // Não interrompe o processo se a geração de metadados falhar
+      }
       
       structuredSummary = await generateStructuredSummary(extractedText);
       structuredSummary = await applyDictionaryReplacements(structuredSummary);
@@ -431,20 +452,32 @@ export async function processPDFFile(filePath, fileName, forceVision = false) {
     }
     
     try {
+      // Verificar e adicionar colunas se necessário
+      try {
+        await pool.query(`
+          ALTER TABLE pdfs 
+          ADD COLUMN IF NOT EXISTS questions_answers TEXT,
+          ADD COLUMN IF NOT EXISTS ely_metadata TEXT
+        `).catch(() => {});
+      } catch (alterError) {
+        // Ignora erro se as colunas já existirem
+      }
+      
       try {
         await pool.query(
-          `UPDATE pdfs SET status = $1, structured_summary = $2, questions_answers = $3 WHERE id = $4`,
-          ['completed', structuredSummary || null, questionsAnswers || null, pdfId_db]
+          `UPDATE pdfs SET status = $1, structured_summary = $2, questions_answers = $3, ely_metadata = $4 WHERE id = $5`,
+          ['completed', structuredSummary || null, questionsAnswers || null, elyMetadata || null, pdfId_db]
         );
       } catch (err) {
-        if (err.message && err.message.includes('questions_answers')) {
+        if (err.message && err.message.includes('questions_answers') || err.message.includes('ely_metadata')) {
           await pool.query(`
             ALTER TABLE pdfs 
-            ADD COLUMN IF NOT EXISTS questions_answers TEXT
+            ADD COLUMN IF NOT EXISTS questions_answers TEXT,
+            ADD COLUMN IF NOT EXISTS ely_metadata TEXT
           `);
           await pool.query(
-            `UPDATE pdfs SET status = $1, structured_summary = $2, questions_answers = $3 WHERE id = $4`,
-            ['completed', structuredSummary || null, questionsAnswers || null, pdfId_db]
+            `UPDATE pdfs SET status = $1, structured_summary = $2, questions_answers = $3, ely_metadata = $4 WHERE id = $5`,
+            ['completed', structuredSummary || null, questionsAnswers || null, elyMetadata || null, pdfId_db]
           );
         } else {
           await pool.query(
@@ -470,6 +503,7 @@ export async function processPDFFile(filePath, fileName, forceVision = false) {
       extractedText,
       structuredSummary,
       questionsAnswers,
+      elyMetadata,
       message: 'PDF processado com sucesso!'
     };
     

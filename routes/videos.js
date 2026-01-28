@@ -11,23 +11,18 @@ router.get('/', async (req, res) => {
       'SELECT * FROM videos ORDER BY created_at DESC'
     );
     
-    const videos = await Promise.all(rows.map(async (row) => {
-      const transcript = row.transcript ? await applyDictionaryReplacements(row.transcript) : undefined;
-      const structuredTranscript = row.structured_transcript ? await applyDictionaryReplacements(row.structured_transcript) : undefined;
-      const questionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
-      
-      return {
-        id: row.id,
-        fileName: row.file_name,
-        sourceType: row.source_type,
-        sourceUrl: row.source_url || undefined,
-        status: row.status,
-        transcript,
-        structuredTranscript,
-        questionsAnswers,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at)
-      };
+    const videos = rows.map((row) => ({
+      id: row.id,
+      fileName: row.file_name,
+      sourceType: row.source_type,
+      sourceUrl: row.source_url || undefined,
+      status: row.status,
+      transcript: row.transcript || undefined,
+      structuredTranscript: row.structured_transcript || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
     }));
     
     res.json(videos);
@@ -50,19 +45,16 @@ router.get('/:id', async (req, res) => {
     
     const row = rows[0];
     
-    const transcript = row.transcript ? await applyDictionaryReplacements(row.transcript) : undefined;
-    const structuredTranscript = row.structured_transcript ? await applyDictionaryReplacements(row.structured_transcript) : undefined;
-    const questionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
-    
     const video = {
       id: row.id,
       fileName: row.file_name,
       sourceType: row.source_type,
       sourceUrl: row.source_url || undefined,
       status: row.status,
-      transcript,
-      structuredTranscript,
-      questionsAnswers,
+      transcript: row.transcript || undefined,
+      structuredTranscript: row.structured_transcript || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };
@@ -83,23 +75,26 @@ router.post('/', async (req, res) => {
       status = 'processing',
       transcript,
       structuredTranscript,
-      questionsAnswers
+      questionsAnswers,
+      elyMetadata
     } = req.body;
     
     const id = uuidv4();
     
+    // Ensure ely_metadata column exists
+    await pool.query(`
+      ALTER TABLE videos 
+      ADD COLUMN IF NOT EXISTS ely_metadata TEXT
+    `).catch(() => {});
+
     await pool.query(
-      `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [id, fileName, sourceType, sourceUrl || null, status, transcript || null, structuredTranscript || null, questionsAnswers || null]
+      `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers, ely_metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [id, fileName, sourceType, sourceUrl || null, status, transcript || null, structuredTranscript || null, questionsAnswers || null, elyMetadata || null]
     );
     
     const { rows } = await pool.query('SELECT * FROM videos WHERE id = $1', [id]);
     const row = rows[0];
-    
-    const processedTranscript = row.transcript ? await applyDictionaryReplacements(row.transcript) : undefined;
-    const processedStructuredTranscript = row.structured_transcript ? await applyDictionaryReplacements(row.structured_transcript) : undefined;
-    const processedQuestionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
     
     const video = {
       id: row.id,
@@ -107,9 +102,10 @@ router.post('/', async (req, res) => {
       sourceType: row.source_type,
       sourceUrl: row.source_url || undefined,
       status: row.status,
-      transcript: processedTranscript,
-      structuredTranscript: processedStructuredTranscript,
-      questionsAnswers: processedQuestionsAnswers,
+      transcript: row.transcript || undefined,
+      structuredTranscript: row.structured_transcript || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };
@@ -130,12 +126,19 @@ router.put('/:id', async (req, res) => {
       status,
       transcript,
       structuredTranscript,
-      questionsAnswers
+      questionsAnswers,
+      elyMetadata
     } = req.body;
     
     const updates = [];
     const values = [];
     let paramIndex = 1;
+    
+    // Ensure ely_metadata column exists
+    await pool.query(`
+      ALTER TABLE videos 
+      ADD COLUMN IF NOT EXISTS ely_metadata TEXT
+    `).catch(() => {});
     
     if (fileName !== undefined) {
       updates.push(`file_name = $${paramIndex++}`);
@@ -165,6 +168,10 @@ router.put('/:id', async (req, res) => {
       updates.push(`questions_answers = $${paramIndex++}`);
       values.push(questionsAnswers || null);
     }
+    if (elyMetadata !== undefined) {
+      updates.push(`ely_metadata = $${paramIndex++}`);
+      values.push(elyMetadata || null);
+    }
     
     if (updates.length === 0) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
@@ -185,19 +192,16 @@ router.put('/:id', async (req, res) => {
     
     const row = rows[0];
     
-    const processedTranscript = row.transcript ? await applyDictionaryReplacements(row.transcript) : undefined;
-    const processedStructuredTranscript = row.structured_transcript ? await applyDictionaryReplacements(row.structured_transcript) : undefined;
-    const processedQuestionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
-    
     const video = {
       id: row.id,
       fileName: row.file_name,
       sourceType: row.source_type,
       sourceUrl: row.source_url || undefined,
       status: row.status,
-      transcript: processedTranscript,
-      structuredTranscript: processedStructuredTranscript,
-      questionsAnswers: processedQuestionsAnswers,
+      transcript: row.transcript || undefined,
+      structuredTranscript: row.structured_transcript || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };
@@ -206,6 +210,55 @@ router.put('/:id', async (req, res) => {
   } catch (error) {
     console.error('Erro ao atualizar vídeo:', error);
     res.status(500).json({ error: 'Erro ao atualizar vídeo' });
+  }
+});
+
+router.post('/:id/process', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM videos WHERE id = $1', [req.params.id]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Vídeo não encontrado' });
+    }
+    
+    const row = rows[0];
+    
+    if (row.status !== 'completed') {
+      return res.status(400).json({ error: 'Apenas vídeos concluídos podem ser processados' });
+    }
+    
+    // Aplicar substituições do dicionário
+    const processedTranscript = row.transcript ? await applyDictionaryReplacements(row.transcript) : null;
+    const processedStructuredTranscript = row.structured_transcript ? await applyDictionaryReplacements(row.structured_transcript) : null;
+    const processedQuestionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : null;
+    
+    // Atualizar no banco de dados
+    await pool.query(
+      `UPDATE videos SET transcript = $1, structured_transcript = $2, questions_answers = $3, updated_at = NOW() WHERE id = $4`,
+      [processedTranscript, processedStructuredTranscript, processedQuestionsAnswers, req.params.id]
+    );
+    
+    // Buscar o registro atualizado
+    const { rows: updatedRows } = await pool.query('SELECT * FROM videos WHERE id = $1', [req.params.id]);
+    const updatedRow = updatedRows[0];
+    
+    const video = {
+      id: updatedRow.id,
+      fileName: updatedRow.file_name,
+      sourceType: updatedRow.source_type,
+      sourceUrl: updatedRow.source_url || undefined,
+      status: updatedRow.status,
+      transcript: processedTranscript || undefined,
+      structuredTranscript: processedStructuredTranscript || undefined,
+      questionsAnswers: processedQuestionsAnswers || undefined,
+      createdAt: new Date(updatedRow.created_at),
+      updatedAt: new Date(updatedRow.updated_at)
+    };
+    
+    res.json(video);
+  } catch (error) {
+    console.error('Erro ao processar vídeo com dicionário:', error);
+    res.status(500).json({ error: 'Erro ao processar vídeo com dicionário' });
   }
 });
 

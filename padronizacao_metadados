@@ -1,0 +1,119 @@
+Aqui está a explicação detalhada de como estruturar seu código e o conteúdo para importação, seguindo rigorosamente o framework E.L.Y.:
+
+1. A Lógica de Organização (O que o seu código deve fazer)
+O seu código precisa tratar cada documento como um conjunto de "Chave: Valor". Isso permite que a IA filtre as informações antes de dar a resposta.
+
+
+Identificação de Origem: Use a tag country com o padrão ISO (ex: BR ou US) para que o código filtre apenas o que é relevante para o país do usuário.
+
+Hierarquia de Autoridade: O código deve priorizar o conteúdo pelo doc_type. Documentos do tipo product_label são a fronteira legal e têm prioridade máxima sobre materiais de marketing.
+
+Nível de Detalhe: Use a tag specificity. Se o usuário está em uma região específica, o código deve buscar primeiro subnational_specific antes de olhar para o country_specific.
+
+2. Conteúdo Formatado para o seu Prompt (Base de Conhecimento)
+Você pode copiar e colar este formato no seu arquivo de base ou script. Ele usa o padrão sugerido no framework para facilitar o processamento da IA:
+
+DOCUMENTO_BASE_01
+
+
+ID_PAIS: BR 
+
+
+CODIGOS_REGIONAIS: BR-PR, BR-RS 
+
+
+NIVEL_ESPECIFICIDADE: subnational_specific 
+
+
+TIPO_DOCUMENTO: localized_guidance 
+
+
+CULTURA: corn 
+
+
+PROPOSITO: Refinar diretrizes gerais em estratégias locais validadas por evidências de campo, garantindo conformidade com limites regulatórios brasileiros.
+
+
+VALIDADE: 2025-01-01 até 2026-01-01 
+
+
+CONTEUDO: [Insira aqui o texto técnico do documento, como dosagens e resultados de ensaios].
+
+3. Como configurar o "Raciocínio" no Código (System Prompt)
+Para que a IA use os documentos importados de forma inteligente, adicione estas instruções ao seu código:
+
+"Ao processar o arquivo TXT importado, siga estas regras: 1. Verifique sempre se a tag country do documento coincide com a localização do usuário. 2. Se a pergunta for sobre dosagem ou recomendação técnica, use obrigatoriamente documentos onde doc_type seja product_label ou localized_guidance. 3. Se a pergunta for sobre argumentos de venda, combine o conteúdo de product_performance_results com marketing_material. 4. Ignore documentos onde a data atual esteja fora do intervalo valid_from e valid_to."
+
+
+Exemplos
+
+ELY Document Example – United States
+
+RESTRICTED
+Document Title: Localized Product Guidance – Corn Hybrid DKC72-09RIB
+Version: v1.0
+Date: February 15, 2025
+Author: Agronomic Excellence Team – U.S.
+
+ELY Metadata Reference (ISO-compliant / Schema key format)
+country: US
+subnational_codes: US-IA, US-IL, US-NE
+specificity: subnational_specific
+doc_type: localized_guidance
+purpose: Delivers regionally adapted recommendations for specific geographies
+or production systems, using local trial data, environmental adaptation, and
+regulatory nuances. Refines the general guidance into precise, localized
+agronomic strategies, ensuring ELY provides recommendations aligned with the
+local reality and validated by in-field evidence.
+language: en
+valid_from: 2025-01-01
+valid_to: 2026-01-01
+
+Abstract (based on the content of the material to be ingested - Optional)
+This document provides localized agronomic recommendations for corn hybrid
+DKC72-09RIB, tailored to the U.S. Corn Belt (Iowa, Illinois, and Nebraska).
+Multi-year field evaluations demonstrate high yield stability, strong foliar
+disease resistance, and consistent performance under moderate drought
+stress.
+Recommended practices include seeding rates of 32–36k seeds/acre, split
+nitrogen applications at V6–V8, and placement in medium-to-high fertility
+environments.
+This localized guidance refines enterprise-level product recommendations into
+precise regional practices that reflect local soil and climate conditions while
+remaining within U.S. regulatory boundaries.
+
+Exemplo de Documento ELY – Brasil
+Título do Documento: Proposta Técnica de Valor – Híbrido de Milho ADV1234
+
+RESTRICTED
+
+Versão: v1.0
+Data: 15 de fevereiro de 2025
+Autor: Equipe de Excelência Agronômica – Brasil
+
+Referência de Metadados ELY (Compatível com ISO / Formato de Esquema)
+country: BR
+subnational_codes: BR-PR, BR-RS
+specificity: subnational_specific
+doc_type: localized_guidance
+purpose: Apresenta recomendações regionais adaptadas a contextos geográficos
+ou sistemas de produção específicos, utilizando dados locais de ensaio, condições
+ambientais e nuances regulatórias. Refina as diretrizes gerais em estratégias
+agronômicas localizadas, assegurando que o ELY forneça recomendações
+alinhadas à realidade local e validadas por evidências de campo.
+language: pt
+valid_from: 2025-01-01
+valid_to: 2026-01-01
+
+Resumo (Abstract - optional)
+Este documento apresenta recomendações agronômicas localizadas para o
+híbrido ADV1234, com foco nas regiões de Paraná (BR-PR) e Rio Grande do
+Sul (BR-RS).
+Os ensaios regionais demonstram elevada estabilidade produtiva, boa
+sanidade foliar e tolerância a estresses hídricos moderados.
+As práticas recomendadas incluem população de 65 a 70 mil plantas por
+hectare, adubação nitrogenada em cobertura entre V4 e V8, e
+posicionamento em áreas de média a alta fertilidade.
+Este documento traduz as diretrizes corporativas em recomendações regionais
+específicas, tecnicamente validadas e alinhadas aos limites legais e
+regulatórios brasileiros.

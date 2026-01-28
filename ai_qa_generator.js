@@ -102,20 +102,40 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
       }
     } else {
       template = `
-      Você é um especialista em transcrições e formatação de conteúdo.
+      Você é um especialista em transcrições e formatação de conteúdo técnico.
       
       ${prompts.transcriptPrompt}
       
-      Instruções adicionais:
-      1. Comece com "[Transcrição melhorada do material]" na primeira linha
-      2. Identifique e mantenha os falantes (identifique por contexto como "Agrônomo:", "Apresentador:", "Falante 1:", etc.)
-      3. Use o formato: [Nome do Falante]: [Texto formatado e aprimorado]
-      4. Organize o texto em parágrafos coerentes e bem estruturados
-      5. Corrija erros de transcrição óbvios, mas mantenha a fidelidade ao conteúdo original
-      6. Melhore a pontuação e a estrutura das frases para melhor legibilidade
-      7. Mantenha o tom e o estilo original
-      8. Não invente informações que não estão no texto original
-      9. Cada fala do mesmo falante deve estar em uma linha separada com o formato: [Nome do Falante]: [Texto]
+      Instruções OBRIGATÓRIAS de formatação:
+      1. Comece com um Título Principal baseado no conteúdo.
+      2. Divida o texto em parágrafos curtos e claros (máximo 4-5 linhas) para facilitar a leitura.
+      3. Identifique falantes se houver (ex: "Especialista:", "Produtor:").
+      4. Use **Negrito** para termos técnicos importantes, nomes de produtos ou ênfases chave.
+      5. Use Listas (bullet points) sempre que houver enumeração de passos, processos, itens ou características.
+      6. Crie subtítulos (## Subtítulo) para separar diferentes assuntos ou seções abordados.
+      7. Corrija pontuação e gramática mantendo o tom original, eliminando vícios de linguagem excessivos.
+      
+      EXEMPLO DE SAÍDA DESEJADA:
+      
+      # Título do Assunto
+      
+      [Introdução clara do tema...]
+      
+      ## Tópico Abordado
+      
+      Explicação do tópico com **termos importantes** em destaque.
+      
+      * Ponto importante 1
+      * Ponto importante 2
+      
+      [Conclusão ou próximos passos...]
+      
+      Agora transforme a transcrição original abaixo seguindo este padrão:
+      
+      Transcrição original:
+      "{text}"
+      
+      Gere agora a transcrição estruturada:
     `;
 
       if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
@@ -165,5 +185,45 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
   }
 };
 
+const improveTextReadability = async (text) => {
+  try {
+    // Se o texto for muito curto, não precisa de processamento pesado, mas vamos garantir consistência
+    if (!text || text.length < 50) return text;
+
+    const model = new ChatOpenAI({
+      modelName: "gpt-4o-mini",
+      temperature: 0.3,
+    });
+
+    const template = `
+      Você é um assistente de revisão de texto. Sua única função é formatar a transcrição bruta abaixo para torná-la legível.
+      
+      Regras Rígidas:
+      1. MANTENHA O CONTEÚDO INTEGRAL: Não remova palavras, não resuma, não mude o estilo.
+      2. PARÁGRAFOS: Quebre o texto em parágrafos lógicos (pule uma linha entre eles) para evitar blocos gigantes de texto.
+      3. PONTUAÇÃO: Corrija pontuação (pontos, vírgulas, interrogações) para que as frases façam sentido.
+      4. CAIXA ALTA: Ajuste maiúsculas/minúsculas adequadamente (início de frases, nomes próprios).
+      5. SEM FORMATAÇÃO EXTRA: Não adicione títulos, negrito, itálico ou marcadores. Apenas texto puro.
+      
+      Texto para formatar:
+      "{text}"
+      
+      Texto formatado:
+    `;
+
+    const prompt = PromptTemplate.fromTemplate(template);
+    const chain = prompt.pipe(model).pipe(new StringOutputParser());
+
+    const result = await chain.invoke({
+      text: text.substring(0, 100000) // Limite de segurança
+    });
+
+    return result.trim();
+  } catch (error) {
+    console.error("Erro ao melhorar legibilidade do texto original:", error);
+    return text; // Fallback para o original em caso de erro
+  }
+};
+
 export default generateQA;
-export { generateEnhancedTranscript };
+export { generateEnhancedTranscript, improveTextReadability };

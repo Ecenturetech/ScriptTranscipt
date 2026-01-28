@@ -11,6 +11,7 @@ import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import pool from '../db/connection.js';
 import { applyDictionaryReplacements } from './videoTranscription.js';
+import { generateElyMetadata } from './metadataGenerator.js';
 import { getStoragePath } from '../utils/storage.js';
 import generateQA, { generateEnhancedTranscript } from '../ai_qa_generator.js';
 import { enrichTranscriptFromCatalog } from '../culture_enricher.js';
@@ -687,15 +688,31 @@ export async function processScormContent(scormId, scormName, coursePath) {
     console.log(`[SCORM] Gerando perguntas e respostas...`);
     const questionsAnswers = await generateQuestionsAnswers(textWithReplacements);
 
+    let elyMetadata = "";
+    try {
+      console.log(`[SCORM] Gerando metadados ELY...`);
+      elyMetadata = await generateElyMetadata(textWithReplacements, scormName);
+      elyMetadata = await applyDictionaryReplacements(elyMetadata);
+    } catch (error) {
+      console.error("[SCORM] Erro ao gerar metadados ELY:", error.message);
+    }
+
+    // Garantir que a coluna ely_metadata existe
+    await pool.query(`
+      ALTER TABLE scorms 
+      ADD COLUMN IF NOT EXISTS ely_metadata TEXT
+    `).catch(() => {});
+
     await pool.query(
       `UPDATE scorms 
        SET status = 'completed', 
            extracted_text = $1, 
            structured_summary = $2, 
            questions_answers = $3,
+           ely_metadata = $4,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $4`,
-      [textWithReplacements, structuredSummary, questionsAnswers, scormDbId]
+       WHERE id = $5`,
+      [textWithReplacements, structuredSummary, questionsAnswers, elyMetadata || null, scormDbId]
     );
 
     console.log(`[SCORM] Processamento concluído com sucesso: ${scormDbId}`);
@@ -710,6 +727,7 @@ export async function processScormContent(scormId, scormName, coursePath) {
       extractedText: textWithReplacements,
       structuredSummary,
       questionsAnswers,
+      elyMetadata,
       videos: {
         total: videosResult.total,
         processed: videosResult.processed.length,

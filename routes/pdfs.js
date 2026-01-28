@@ -16,21 +16,16 @@ router.get('/', async (req, res) => {
       'SELECT * FROM pdfs ORDER BY created_at DESC'
     );
     
-    const pdfs = await Promise.all(rows.map(async (row) => {
-      const extractedText = row.extracted_text ? await applyDictionaryReplacements(row.extracted_text) : undefined;
-      const structuredSummary = row.structured_summary ? await applyDictionaryReplacements(row.structured_summary) : undefined;
-      const questionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
-      
-      return {
-        id: row.id,
-        fileName: row.file_name,
-        status: row.status,
-        extractedText,
-        structuredSummary,
-        questionsAnswers,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at)
-      };
+    const pdfs = rows.map((row) => ({
+      id: row.id,
+      fileName: row.file_name,
+      status: row.status,
+      extractedText: row.extracted_text || undefined,
+      structuredSummary: row.structured_summary || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
     }));
     
     res.json(pdfs);
@@ -53,17 +48,14 @@ router.get('/:id/download', async (req, res) => {
     
     const row = rows[0];
     
-    const extractedText = row.extracted_text ? await applyDictionaryReplacements(row.extracted_text) : undefined;
-    const structuredSummary = row.structured_summary ? await applyDictionaryReplacements(row.structured_summary) : undefined;
-    const questionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
-    
     const pdfData = {
       id: row.id,
       fileName: row.file_name,
       status: row.status,
-      extractedText,
-      structuredSummary,
-      questionsAnswers,
+      extractedText: row.extracted_text || undefined,
+      structuredSummary: row.structured_summary || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };
@@ -90,17 +82,14 @@ router.get('/:id', async (req, res) => {
     
     const row = rows[0];
     
-    const extractedText = row.extracted_text ? await applyDictionaryReplacements(row.extracted_text) : undefined;
-    const structuredSummary = row.structured_summary ? await applyDictionaryReplacements(row.structured_summary) : undefined;
-    const questionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
-    
     const pdf = {
       id: row.id,
       fileName: row.file_name,
       status: row.status,
-      extractedText,
-      structuredSummary,
-      questionsAnswers,
+      extractedText: row.extracted_text || undefined,
+      structuredSummary: row.structured_summary || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };
@@ -119,27 +108,35 @@ router.post('/', async (req, res) => {
       status = 'processing',
       extractedText,
       structuredSummary,
-      questionsAnswers
+      questionsAnswers,
+      elyMetadata
     } = req.body;
     
     const id = uuidv4();
     
     try {
+      await pool.query(`
+        ALTER TABLE pdfs 
+        ADD COLUMN IF NOT EXISTS questions_answers TEXT,
+        ADD COLUMN IF NOT EXISTS ely_metadata TEXT
+      `).catch(() => {});
+      
       await pool.query(
-        `INSERT INTO pdfs (id, file_name, status, extracted_text, structured_summary, questions_answers)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, fileName, status, extractedText || null, structuredSummary || null, questionsAnswers || null]
+        `INSERT INTO pdfs (id, file_name, status, extracted_text, structured_summary, questions_answers, ely_metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, fileName, status, extractedText || null, structuredSummary || null, questionsAnswers || null, elyMetadata || null]
       );
     } catch (err) {
-      if (err.message && err.message.includes('questions_answers')) {
+      if (err.message && (err.message.includes('questions_answers') || err.message.includes('ely_metadata'))) {
         await pool.query(`
           ALTER TABLE pdfs 
-          ADD COLUMN IF NOT EXISTS questions_answers TEXT
+          ADD COLUMN IF NOT EXISTS questions_answers TEXT,
+          ADD COLUMN IF NOT EXISTS ely_metadata TEXT
         `).catch(() => {});
         await pool.query(
-          `INSERT INTO pdfs (id, file_name, status, extracted_text, structured_summary, questions_answers)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [id, fileName, status, extractedText || null, structuredSummary || null, questionsAnswers || null]
+          `INSERT INTO pdfs (id, file_name, status, extracted_text, structured_summary, questions_answers, ely_metadata)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [id, fileName, status, extractedText || null, structuredSummary || null, questionsAnswers || null, elyMetadata || null]
         );
       } else {
         throw err;
@@ -149,17 +146,14 @@ router.post('/', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM pdfs WHERE id = $1', [id]);
     const row = rows[0];
     
-    const processedExtractedText = row.extracted_text ? await applyDictionaryReplacements(row.extracted_text) : undefined;
-    const processedStructuredSummary = row.structured_summary ? await applyDictionaryReplacements(row.structured_summary) : undefined;
-    const processedQuestionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
-    
     const pdf = {
       id: row.id,
       fileName: row.file_name,
       status: row.status,
-      extractedText: processedExtractedText,
-      structuredSummary: processedStructuredSummary,
-      questionsAnswers: processedQuestionsAnswers,
+      extractedText: row.extracted_text || undefined,
+      structuredSummary: row.structured_summary || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };
@@ -178,7 +172,8 @@ router.put('/:id', async (req, res) => {
       status,
       extractedText,
       structuredSummary,
-      questionsAnswers
+      questionsAnswers,
+      elyMetadata
     } = req.body;
     
     const updates = [];
@@ -205,6 +200,10 @@ router.put('/:id', async (req, res) => {
       updates.push(`questions_answers = $${paramIndex++}`);
       values.push(questionsAnswers || null);
     }
+    if (elyMetadata !== undefined) {
+      updates.push(`ely_metadata = $${paramIndex++}`);
+      values.push(elyMetadata || null);
+    }
     
     if (updates.length === 0) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
@@ -225,17 +224,14 @@ router.put('/:id', async (req, res) => {
     
     const row = rows[0];
     
-    const processedExtractedText = row.extracted_text ? await applyDictionaryReplacements(row.extracted_text) : undefined;
-    const processedStructuredSummary = row.structured_summary ? await applyDictionaryReplacements(row.structured_summary) : undefined;
-    const processedQuestionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
-    
     const pdf = {
       id: row.id,
       fileName: row.file_name,
       status: row.status,
-      extractedText: processedExtractedText,
-      structuredSummary: processedStructuredSummary,
-      questionsAnswers: processedQuestionsAnswers,
+      extractedText: row.extracted_text || undefined,
+      structuredSummary: row.structured_summary || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };
@@ -244,6 +240,55 @@ router.put('/:id', async (req, res) => {
   } catch (error) {
     console.error('Erro ao atualizar PDF:', error);
     res.status(500).json({ error: 'Erro ao atualizar PDF' });
+  }
+});
+
+router.post('/:id/process', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM pdfs WHERE id = $1', [req.params.id]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'PDF não encontrado' });
+    }
+    
+    const row = rows[0];
+    
+    if (row.status !== 'completed') {
+      return res.status(400).json({ error: 'Apenas PDFs concluídos podem ser processados' });
+    }
+    
+    // Aplicar substituições do dicionário
+    const processedExtractedText = row.extracted_text ? await applyDictionaryReplacements(row.extracted_text) : null;
+    const processedStructuredSummary = row.structured_summary ? await applyDictionaryReplacements(row.structured_summary) : null;
+    const processedQuestionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : null;
+    const processedElyMetadata = row.ely_metadata ? await applyDictionaryReplacements(row.ely_metadata) : null;
+    
+    // Atualizar no banco de dados
+    await pool.query(
+      `UPDATE pdfs SET extracted_text = $1, structured_summary = $2, questions_answers = $3, ely_metadata = $4, updated_at = NOW() WHERE id = $5`,
+      [processedExtractedText, processedStructuredSummary, processedQuestionsAnswers, processedElyMetadata, req.params.id]
+    );
+    
+    // Buscar o registro atualizado
+    const { rows: updatedRows } = await pool.query('SELECT * FROM pdfs WHERE id = $1', [req.params.id]);
+    const updatedRow = updatedRows[0];
+    
+    const pdf = {
+      id: updatedRow.id,
+      fileName: updatedRow.file_name,
+      status: updatedRow.status,
+      extractedText: processedExtractedText || undefined,
+      structuredSummary: processedStructuredSummary || undefined,
+      questionsAnswers: processedQuestionsAnswers || undefined,
+      elyMetadata: processedElyMetadata || undefined,
+      createdAt: new Date(updatedRow.created_at),
+      updatedAt: new Date(updatedRow.updated_at)
+    };
+    
+    res.json(pdf);
+  } catch (error) {
+    console.error('Erro ao processar PDF com dicionário:', error);
+    res.status(500).json({ error: 'Erro ao processar PDF com dicionário' });
   }
 });
 
@@ -297,11 +342,11 @@ router.post('/:id/reprocess', async (req, res) => {
       
       const filePath = path.join(storagePath, originalFile);
       
-      // Atualizar status para processing
-      await pool.query(
-        'UPDATE pdfs SET status = $1, extracted_text = NULL, structured_summary = NULL, questions_answers = NULL WHERE id = $2',
-        ['processing', pdfId]
-      );
+    // Atualizar status para processing
+    await pool.query(
+      'UPDATE pdfs SET status = $1, extracted_text = NULL, structured_summary = NULL, questions_answers = NULL, ely_metadata = NULL WHERE id = $2',
+      ['processing', pdfId]
+    );
 
       // Adicionar à fila de processamento
       const jobId = queue.addJob({
@@ -332,7 +377,7 @@ router.post('/:id/reprocess', async (req, res) => {
 
     // Atualizar status para processing
     await pool.query(
-      'UPDATE pdfs SET status = $1, extracted_text = NULL, structured_summary = NULL, questions_answers = NULL WHERE id = $2',
+      'UPDATE pdfs SET status = $1, extracted_text = NULL, structured_summary = NULL, questions_answers = NULL, ely_metadata = NULL WHERE id = $2',
       ['processing', pdfId]
     );
 

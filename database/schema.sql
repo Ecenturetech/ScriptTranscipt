@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS videos (
   transcript TEXT,
   structured_transcript TEXT,
   questions_answers TEXT,
+  ely_metadata TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS audios (
   transcript TEXT,
   structured_transcript TEXT,
   questions_answers TEXT,
+  ely_metadata TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -100,6 +102,8 @@ CREATE TABLE IF NOT EXISTS pdfs (
   status status_enum NOT NULL DEFAULT 'processing',
   extracted_text TEXT,
   structured_summary TEXT,
+  questions_answers TEXT,
+  ely_metadata TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -122,6 +126,7 @@ CREATE TABLE IF NOT EXISTS scorms (
   extracted_text TEXT,
   structured_summary TEXT,
   questions_answers TEXT,
+  ely_metadata TEXT,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

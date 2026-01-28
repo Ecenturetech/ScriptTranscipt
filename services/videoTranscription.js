@@ -5,8 +5,9 @@ import { v4 as uuidv4 } from 'uuid';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import { resolve } from 'path';
-import generateQA, { generateEnhancedTranscript } from '../ai_qa_generator.js';
+import generateQA, { generateEnhancedTranscript, improveTextReadability } from '../ai_qa_generator.js';
 import { enrichTranscriptFromCatalog } from '../culture_enricher.js';
+import { generateElyMetadata } from './metadataGenerator.js';
 import pool from '../db/connection.js';
 import { getStoragePath } from '../utils/storage.js';
 import { splitAudioFile, cleanupChunks } from '../utils/audioSplitter.js';
@@ -266,6 +267,14 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
       if (!transcriptText || transcriptText.trim().length === 0) {
         throw new Error('Transcrição retornou vazia');
       }
+
+      // Melhorar legibilidade (pontuação e parágrafos) do texto original
+      console.log('Melhorando legibilidade da transcrição original...');
+      try {
+        transcriptText = await improveTextReadability(transcriptText);
+      } catch (improveError) {
+        console.warn('Falha ao melhorar legibilidade, mantendo original:', improveError.message);
+      }
       
       transcriptText = await applyDictionaryReplacements(transcriptText);
       
@@ -315,7 +324,7 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
     
     let processedResult;
     try {
-      processedResult = await processMediaTranscript(dbId, transcriptText, tableName);
+      processedResult = await processMediaTranscript(dbId, transcriptText, tableName, savedFileName);
     } catch (processError) {
       console.error(`[${tableName.toUpperCase()}] Erro ao processar transcrição completa, mas transcript básico foi salvo:`, processError.message);
       try {
@@ -357,10 +366,17 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
 }
 
 export async function processVideoTranscript(videoId, transcriptText) {
-  return processMediaTranscript(videoId, transcriptText, 'videos');
+  // Para compatibilidade, buscamos o fileName do banco se não for passado
+  let fileName = 'video.mp4';
+  try {
+    const res = await pool.query('SELECT file_name FROM videos WHERE id = $1', [videoId]);
+    if (res.rows.length > 0) fileName = res.rows[0].file_name;
+  } catch (e) { console.error('Erro ao buscar filename:', e); }
+  
+  return processMediaTranscript(videoId, transcriptText, 'videos', fileName);
 }
 
-export async function processMediaTranscript(id, transcriptText, tableName = 'videos') {
+export async function processMediaTranscript(id, transcriptText, tableName = 'videos', fileName = 'unknown.mp4') {
   try {
     const storagePath = getStoragePath();
     const tempTxtPath = path.join(storagePath, `temp-transcript-${id}.txt`);
@@ -389,11 +405,26 @@ export async function processMediaTranscript(id, transcriptText, tableName = 'vi
       console.error("Erro ao gerar Q&A:", error.message);
     }
     
+    let elyMetadata = "";
+    try {
+      console.log(`[${tableName.toUpperCase()}] Gerando metadados ELY...`);
+      elyMetadata = await generateElyMetadata(transcriptText, fileName);
+      elyMetadata = await applyDictionaryReplacements(elyMetadata);
+    } catch (error) {
+      console.error("Erro ao gerar metadados ELY:", error.message);
+    }
+    
     console.log(`[${tableName.toUpperCase()}] Atualizando status para 'completed' no banco para ID: ${id}`);
     
+    // Garantir que a coluna ely_metadata existe (segurança)
+    await pool.query(`
+      ALTER TABLE ${tableName} 
+      ADD COLUMN IF NOT EXISTS ely_metadata TEXT
+    `).catch(() => {});
+
     await pool.query(
-      `UPDATE ${tableName} SET status = $1, transcript = $2, structured_transcript = $3, questions_answers = $4 WHERE id = $5`,
-      ['completed', transcriptText, enhancedText || null, qaText || null, id]
+      `UPDATE ${tableName} SET status = $1, transcript = $2, structured_transcript = $3, questions_answers = $4, ely_metadata = $5 WHERE id = $6`,
+      ['completed', transcriptText, enhancedText || null, qaText || null, elyMetadata || null, id]
     );
     
     console.log(`[${tableName.toUpperCase()}] Status atualizado com sucesso para ID: ${id}`);
@@ -410,7 +441,8 @@ export async function processMediaTranscript(id, transcriptText, tableName = 'vi
       success: true,
       transcript: transcriptText,
       structuredTranscript: enhancedText,
-      questionsAnswers: qaText
+      questionsAnswers: qaText,
+      elyMetadata: elyMetadata
     };
     
   } catch (error) {

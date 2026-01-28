@@ -56,23 +56,18 @@ router.get('/', async (req, res) => {
       'SELECT * FROM scorms ORDER BY created_at DESC'
     );
     
-    const scorms = await Promise.all(rows.map(async (row) => {
-      const extractedText = row.extracted_text ? await applyDictionaryReplacements(row.extracted_text) : undefined;
-      const structuredSummary = row.structured_summary ? await applyDictionaryReplacements(row.structured_summary) : undefined;
-      const questionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
-      
-      return {
-        id: row.id,
-        scormId: row.scorm_id,
-        scormName: row.scorm_name,
-        coursePath: row.course_path,
-        status: row.status,
-        extractedText,
-        structuredSummary,
-        questionsAnswers,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at)
-      };
+    const scorms = rows.map((row) => ({
+      id: row.id,
+      scormId: row.scorm_id,
+      scormName: row.scorm_name,
+      coursePath: row.course_path,
+      status: row.status,
+      extractedText: row.extracted_text || undefined,
+      structuredSummary: row.structured_summary || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
     }));
     
     res.json(scorms);
@@ -220,19 +215,16 @@ router.get('/:id', async (req, res) => {
     
     const row = rows[0];
     
-    const extractedText = row.extracted_text ? await applyDictionaryReplacements(row.extracted_text) : undefined;
-    const structuredSummary = row.structured_summary ? await applyDictionaryReplacements(row.structured_summary) : undefined;
-    const questionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : undefined;
-    
     const scorm = {
       id: row.id,
       scormId: row.scorm_id,
       scormName: row.scorm_name,
       coursePath: row.course_path,
       status: row.status,
-      extractedText,
-      structuredSummary,
-      questionsAnswers,
+      extractedText: row.extracted_text || undefined,
+      structuredSummary: row.structured_summary || undefined,
+      questionsAnswers: row.questions_answers || undefined,
+      elyMetadata: row.ely_metadata || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };
@@ -241,6 +233,63 @@ router.get('/:id', async (req, res) => {
   } catch (error) {
     console.error('Erro ao buscar SCORM processado:', error);
     res.status(500).json({ error: 'Erro ao buscar SCORM processado' });
+  }
+});
+
+router.post('/:id/process', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM scorms WHERE id = $1', [req.params.id]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'SCORM não encontrado' });
+    }
+    
+    const row = rows[0];
+    
+    if (row.status !== 'completed') {
+      return res.status(400).json({ error: 'Apenas SCORMs concluídos podem ser processados' });
+    }
+    
+    // Aplicar substituições do dicionário
+    const processedExtractedText = row.extracted_text ? await applyDictionaryReplacements(row.extracted_text) : null;
+    const processedStructuredSummary = row.structured_summary ? await applyDictionaryReplacements(row.structured_summary) : null;
+    const processedQuestionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : null;
+    const processedElyMetadata = row.ely_metadata ? await applyDictionaryReplacements(row.ely_metadata) : null;
+    
+    // Ensure ely_metadata column exists
+    await pool.query(`
+      ALTER TABLE scorms 
+      ADD COLUMN IF NOT EXISTS ely_metadata TEXT
+    `).catch(() => {});
+
+    // Atualizar no banco de dados
+    await pool.query(
+      `UPDATE scorms SET extracted_text = $1, structured_summary = $2, questions_answers = $3, ely_metadata = $4, updated_at = NOW() WHERE id = $5`,
+      [processedExtractedText, processedStructuredSummary, processedQuestionsAnswers, processedElyMetadata, req.params.id]
+    );
+    
+    // Buscar o registro atualizado
+    const { rows: updatedRows } = await pool.query('SELECT * FROM scorms WHERE id = $1', [req.params.id]);
+    const updatedRow = updatedRows[0];
+    
+    const scorm = {
+      id: updatedRow.id,
+      scormId: updatedRow.scorm_id,
+      scormName: updatedRow.scorm_name,
+      coursePath: updatedRow.course_path,
+      status: updatedRow.status,
+      extractedText: processedExtractedText || undefined,
+      structuredSummary: processedStructuredSummary || undefined,
+      questionsAnswers: processedQuestionsAnswers || undefined,
+      elyMetadata: processedElyMetadata || undefined,
+      createdAt: new Date(updatedRow.created_at),
+      updatedAt: new Date(updatedRow.updated_at)
+    };
+    
+    res.json(scorm);
+  } catch (error) {
+    console.error('Erro ao processar SCORM com dicionário:', error);
+    res.status(500).json({ error: 'Erro ao processar SCORM com dicionário' });
   }
 });
 
