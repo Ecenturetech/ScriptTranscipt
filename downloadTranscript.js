@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import generateQA, { generateEnhancedTranscript } from "./ai_qa_generator.js";
 import { enrichTranscriptFromCatalog } from "./culture_enricher.js";
+import { generateElyMetadata } from "./services/metadataGenerator.js";
 import { applyDictionaryReplacements } from "./services/videoTranscription.js";
 import { processVideoFile } from "./services/videoTranscription.js";
 import pool from "./db/connection.js";
@@ -329,6 +330,15 @@ async function downloadTranscript(videoUrl) {
     console.error("Erro ao gerar Q&A:", error.message);
   }
 
+  let elyMetadata = "";
+  try {
+    console.log(`[VIMEO] Gerando metadados ELY...`);
+    elyMetadata = await generateElyMetadata(txtFormatted, videoTitle || baseFileName);
+    elyMetadata = await applyDictionaryReplacements(elyMetadata);
+  } catch (error) {
+    console.error("[VIMEO] Erro ao gerar metadados ELY:", error.message);
+  }
+
   const consolidatedContent = [
     "=".repeat(80),
     "TRANSCRIÇÃO COMPLETA",
@@ -374,6 +384,17 @@ async function downloadTranscript(videoUrl) {
     );
   }
 
+  if (elyMetadata) {
+    consolidatedContent.push(
+      "─".repeat(80),
+      "5. METADADOS ELY",
+      "─".repeat(80),
+      "",
+      elyMetadata,
+      ""
+    );
+  }
+
   consolidatedContent.push("=".repeat(80));
 
   fs.writeFileSync(outputTxtPath, consolidatedContent.join("\n"));
@@ -393,13 +414,14 @@ async function downloadTranscript(videoUrl) {
         const fileName = `${baseFileName}-${track.language}.txt`;
         
         await pool.query(
-          `UPDATE videos SET status = $1, file_name = $2, transcript = $3, structured_transcript = $4, questions_answers = $5 WHERE id = $6`,
+          `UPDATE videos SET status = $1, file_name = $2, transcript = $3, structured_transcript = $4, questions_answers = $5, ely_metadata = $6 WHERE id = $7`,
           [
             'completed',
             fileName,
             txtFormatted,
             enhancedText || null,
             qaText || null,
+            elyMetadata || null,
             videoId_db
           ]
         );
@@ -414,8 +436,8 @@ async function downloadTranscript(videoUrl) {
         const fileName = `${baseFileName}-${track.language}.txt`;
         
         await pool.query(
-          `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          `INSERT INTO videos (id, file_name, source_type, source_url, status, transcript, structured_transcript, questions_answers, ely_metadata)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
           [
             videoId_db_uuid,
             fileName,
@@ -424,7 +446,8 @@ async function downloadTranscript(videoUrl) {
             'completed',
             txtFormatted,
             enhancedText || null,
-            qaText || null
+            qaText || null,
+            elyMetadata || null
           ]
         );
         
@@ -462,7 +485,8 @@ async function downloadTranscript(videoUrl) {
     storagePath: relativePath,
     transcript: txtFormatted,
     structuredTranscript: enhancedText || null,
-    questionsAnswers: qaText || null
+    questionsAnswers: qaText || null,
+    elyMetadata: elyMetadata || null
   };
 }
 
