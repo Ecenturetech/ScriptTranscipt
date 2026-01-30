@@ -165,7 +165,7 @@ async function extractTextViaVision(filePath) {
     
     let combinedText = '';
     
-    const batchSize = 2;
+    const batchSize = 4;
     for (let i = 0; i < images.length; i += batchSize) {
       const batch = images.slice(i, i + batchSize);
       console.log(`[PDF-VISION] Enviando lote ${Math.floor(i/batchSize) + 1} de ${Math.ceil(images.length/batchSize)} para OpenAI...`);
@@ -234,12 +234,12 @@ async function generateQuestionsAnswers(text) {
       throw new Error('Prompt de Q&A (qa_prompt) não configurado no banco de dados. Configure através da interface de settings.');
     }
     
-    const textoLimitado = text.substring(0, 100000);
+    const textoLimitado = text.substring(0, 30000);
     
     let promptContent = '';
     
     if (prompts.qaPrompt.includes('{text}')) {
-      promptContent = prompts.qaPrompt.replace('{text}', textoLimitado);
+      promptContent = prompts.qaPrompt.replace('{text}', textoLimitado) + '\n\nOBRIGATÓRIO: Gere as perguntas e respostas NO MESMO IDIOMA do texto. NUNCA traduza.';
     } else {
       promptContent = `${prompts.qaPrompt}
 
@@ -248,7 +248,7 @@ Texto base:
 ${textoLimitado}
 """
 
-Gere o Q&A agora e utilize a língua do texto original:`;
+Gere o Q&A agora NO MESMO IDIOMA do texto. NUNCA traduza.`;
     }
     
     if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
@@ -285,7 +285,7 @@ async function generateStructuredSummary(text) {
       throw new Error('Prompt de transcrição (transcript_prompt) não configurado no banco de dados. Configure através da interface de settings.');
     }
     
-    const textoLimitado = text.substring(0, 100000);
+    const textoLimitado = text.substring(0, 30000);
     
     const model = new ChatOpenAI({
       modelName: "gpt-4o-mini",
@@ -295,7 +295,7 @@ async function generateStructuredSummary(text) {
     let template = '';
     
     if (prompts.transcriptPrompt.includes('{text}')) {
-      template = prompts.transcriptPrompt;
+      template = prompts.transcriptPrompt + '\n\nOBRIGATÓRIO: Mantenha o texto NO MESMO IDIOMA do original. NUNCA traduza.';
       if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
         template = template.replace('{text}', `{text}\n\nInstruções adicionais:\n${prompts.additionalPrompt}`);
       }
@@ -306,7 +306,7 @@ async function generateStructuredSummary(text) {
         template += `\n\nInstruções adicionais:\n${prompts.additionalPrompt}`;
       }
       
-      template += `\n\nTranscrição original:\n"{text}"\n\nGere agora a transcrição aprimorada no mesmo formato do exemplo:`;
+      template += `\n\nTranscrição original:\n"{text}"\n\nGere agora a transcrição aprimorada no mesmo formato do exemplo. MANTENHA O MESMO IDIOMA do texto original. Não traduza.`;
     }
     
     const prompt = PromptTemplate.fromTemplate(template);
@@ -393,8 +393,8 @@ export async function processPDFFile(filePath, fileName, forceVision = false) {
         throw new Error('Nenhum texto foi extraído do PDF (mesmo após tentativa com Visão)');
       }
 
-      // Melhorar legibilidade (pontuação e parágrafos) do texto original
-      console.log('[PDF] Melhorando legibilidade do texto extraído...');
+      const textLen = extractedText.length;
+      console.log(`[PDF] Melhorando legibilidade do texto extraído (${textLen} caracteres)...`);
       try {
         extractedText = await improveTextReadability(extractedText);
       } catch (improveError) {
@@ -413,6 +413,23 @@ export async function processPDFFile(filePath, fileName, forceVision = false) {
       try {
         elyMetadata = await generateElyMetadata(extractedText, fileName);
         elyMetadata = await applyDictionaryReplacements(elyMetadata);
+
+        // Salvar metadados imediatamente para garantir persistência
+        try {
+            await pool.query(`
+                ALTER TABLE pdfs 
+                ADD COLUMN IF NOT EXISTS ely_metadata TEXT
+            `).catch(() => {});
+
+            await pool.query(
+                `UPDATE pdfs SET ely_metadata = $1 WHERE id = $2`,
+                [elyMetadata, pdfId_db]
+            );
+            console.log('[PDF] Metadados ELY salvos no banco com sucesso.');
+        } catch (saveError) {
+            console.error('[PDF] Erro ao salvar metadados intermediários:', saveError);
+        }
+
       } catch (metadataError) {
         console.error('[PDF] Erro ao gerar metadados ELY:', metadataError);
         // Não interrompe o processo se a geração de metadados falhar

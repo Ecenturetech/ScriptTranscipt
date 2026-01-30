@@ -50,8 +50,8 @@ const generateQA = async (inputFile = "./transcript_doc.txt", outputFile = "resu
     });
 
     let template = prompts.qaPrompt.includes('{text}') 
-      ? prompts.qaPrompt 
-      : `${prompts.qaPrompt}\n\nTexto base:\n"{text}"\n\nGere o Q&A agora e utilize a língua do texto original:`;
+      ? prompts.qaPrompt + '\n\nOBRIGATÓRIO: Gere as perguntas e respostas NO MESMO IDIOMA do texto (espanhol, inglês, português, etc.). NUNCA traduza.'
+      : `${prompts.qaPrompt}\n\nTexto base:\n"{text}"\n\nGere o Q&A agora NO MESMO IDIOMA do texto. NUNCA traduza.`;
     
     if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
       template += `\n\nInstruções adicionais:\n${prompts.additionalPrompt}`;
@@ -96,7 +96,7 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
     let template = '';
     
     if (prompts.transcriptPrompt.includes('{text}')) {
-      template = prompts.transcriptPrompt;
+      template = prompts.transcriptPrompt + '\n\nOBRIGATÓRIO: Mantenha o texto NO MESMO IDIOMA do original (espanhol, inglês, português, etc.). NUNCA traduza.';
       if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
         template = template.replace('{text}', `{text}\n\nInstruções adicionais:\n${prompts.additionalPrompt}`);
       }
@@ -107,6 +107,7 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
       ${prompts.transcriptPrompt}
       
       Instruções OBRIGATÓRIAS de formatação:
+      0. MANTENHA O MESMO IDIOMA: O texto de saída deve estar no mesmo idioma do texto original (espanhol, inglês, português, etc.). NUNCA traduza.
       1. Comece com um Título Principal baseado no conteúdo.
       2. Divida o texto em parágrafos curtos e claros (máximo 4-5 linhas) para facilitar a leitura.
       3. Identifique falantes se houver (ex: "Especialista:", "Produtor:").
@@ -161,7 +162,7 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
       }
 
       template += `
-      Agora transforme a transcrição original abaixo seguindo o mesmo formato e estilo do exemplo:
+      Agora transforme a transcrição original abaixo seguindo o mesmo formato e estilo do exemplo. MANTENHA O MESMO IDIOMA do texto original. Não traduza.
       
       Transcrição original:
       "{text}"
@@ -185,9 +186,36 @@ const generateEnhancedTranscript = async (inputFile = "./transcript_doc.txt", ou
   }
 };
 
+const IMPROVE_READABILITY_CHUNK_SIZE = 12000;
+const IMPROVE_READABILITY_CHUNK_THRESHOLD = 15000;
+
+function splitTextIntoChunks(fullText, maxChunkSize) {
+  const trimmed = fullText.substring(0, 100000);
+  if (trimmed.length <= maxChunkSize) return [trimmed];
+
+  const chunks = [];
+  let start = 0;
+
+  while (start < trimmed.length) {
+    let end = Math.min(start + maxChunkSize, trimmed.length);
+    if (end < trimmed.length) {
+      const lastParagraph = trimmed.lastIndexOf('\n\n', end);
+      if (lastParagraph > start) {
+        end = lastParagraph + 2;
+      } else {
+        const lastSpace = trimmed.lastIndexOf(' ', end);
+        if (lastSpace > start) end = lastSpace + 1;
+      }
+    }
+    chunks.push(trimmed.slice(start, end).trim());
+    start = end;
+  }
+
+  return chunks.filter((c) => c.length > 0);
+}
+
 const improveTextReadability = async (text) => {
   try {
-    // Se o texto for muito curto, não precisa de processamento pesado, mas vamos garantir consistência
     if (!text || text.length < 50) return text;
 
     const model = new ChatOpenAI({
@@ -199,11 +227,12 @@ const improveTextReadability = async (text) => {
       Você é um assistente de revisão de texto. Sua única função é formatar a transcrição bruta abaixo para torná-la legível.
       
       Regras Rígidas:
-      1. MANTENHA O CONTEÚDO INTEGRAL: Não remova palavras, não resuma, não mude o estilo.
-      2. PARÁGRAFOS: Quebre o texto em parágrafos lógicos (pule uma linha entre eles) para evitar blocos gigantes de texto.
-      3. PONTUAÇÃO: Corrija pontuação (pontos, vírgulas, interrogações) para que as frases façam sentido.
-      4. CAIXA ALTA: Ajuste maiúsculas/minúsculas adequadamente (início de frases, nomes próprios).
-      5. SEM FORMATAÇÃO EXTRA: Não adicione títulos, negrito, itálico ou marcadores. Apenas texto puro.
+      1. MANTENHA O MESMO IDIOMA: O texto deve permanecer no mesmo idioma em que foi escrito (espanhol, inglês, português, etc.). NUNCA traduza.
+      2. MANTENHA O CONTEÚDO INTEGRAL: Não remova palavras, não resuma, não mude o estilo.
+      3. PARÁGRAFOS: Quebre o texto em parágrafos lógicos (pule uma linha entre eles) para evitar blocos gigantes de texto.
+      4. PONTUAÇÃO: Corrija pontuação (pontos, vírgulas, interrogações) para que as frases façam sentido.
+      5. CAIXA ALTA: Ajuste maiúsculas/minúsculas adequadamente (início de frases, nomes próprios).
+      6. SEM FORMATAÇÃO EXTRA: Não adicione títulos, negrito, itálico ou marcadores. Apenas texto puro.
       
       Texto para formatar:
       "{text}"
@@ -214,14 +243,29 @@ const improveTextReadability = async (text) => {
     const prompt = PromptTemplate.fromTemplate(template);
     const chain = prompt.pipe(model).pipe(new StringOutputParser());
 
-    const result = await chain.invoke({
-      text: text.substring(0, 100000) // Limite de segurança
-    });
+    const safeText = text.substring(0, 100000);
+    if (safeText.length <= IMPROVE_READABILITY_CHUNK_THRESHOLD) {
+      const result = await chain.invoke({ text: safeText });
+      return result.trim();
+    }
 
-    return result.trim();
+    const chunks = splitTextIntoChunks(safeText, IMPROVE_READABILITY_CHUNK_SIZE);
+    const total = chunks.length;
+    const parts = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      console.log(`[Legibilidade] Processando bloco ${i + 1}/${total} (${chunks[i].length} caracteres)...`);
+      const result = await chain.invoke({ text: chunks[i] });
+      parts.push(result.trim());
+      if (i < chunks.length - 1) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+
+    return parts.join('\n\n');
   } catch (error) {
     console.error("Erro ao melhorar legibilidade do texto original:", error);
-    return text; // Fallback para o original em caso de erro
+    return text;
   }
 };
 

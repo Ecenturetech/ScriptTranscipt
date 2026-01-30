@@ -230,7 +230,6 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
           const transcription = await openai.audio.transcriptions.create({
             file: fileStream,
             model: 'whisper-1',
-            language: 'pt',
             response_format: 'text',
           });
           

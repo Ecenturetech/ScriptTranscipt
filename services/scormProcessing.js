@@ -64,6 +64,9 @@ async function extractTextFromScormContent(scormId, videoTranscripts = []) {
     }
 
     let extractedText = `Título do Curso: ${content.title}\n\n`;
+    if (content.description) {
+      extractedText += `Descrição do Curso: ${content.description}\n\n`;
+    }
     extractedText += `Número de páginas: ${content.pagesCount}\n\n`;
     
     if (content.lessons && Object.keys(content.lessons).length > 0) {
@@ -71,6 +74,9 @@ async function extractTextFromScormContent(scormId, videoTranscripts = []) {
       const lessonsArray = Object.values(content.lessons).sort((a, b) => a.lessonPage - b.lessonPage);
       for (const lesson of lessonsArray) {
         extractedText += `Página ${lesson.lessonPage}: ${lesson.lesson}\n`;
+        if (lesson.description) {
+          extractedText += `Descrição: ${lesson.description}\n`;
+        }
       }
       extractedText += `\n`;
     }
@@ -96,6 +102,9 @@ async function extractTextFromScormContent(scormId, videoTranscripts = []) {
       
       for (const media of mediasArray) {
         extractedText += `**Vídeo (Página ${media.lessonPage}):** ${media.title || media.id}\n`;
+        if (media.description) {
+          extractedText += `  Descrição: ${media.description}\n`;
+        }
         if (media.src) {
           extractedText += `  URL: ${media.src}\n`;
         }
@@ -107,13 +116,7 @@ async function extractTextFromScormContent(scormId, videoTranscripts = []) {
         
         if (videoTranscript) {
           if (videoTranscript.transcript) {
-            extractedText += `  **Transcrição:**\n  ${videoTranscript.transcript}\n\n`;
-          }
-          if (videoTranscript.structuredTranscript) {
-            extractedText += `  **Transcrição Estruturada:**\n  ${videoTranscript.structuredTranscript}\n\n`;
-          }
-          if (videoTranscript.questionsAnswers) {
-            extractedText += `  **Perguntas e Respostas:**\n  ${videoTranscript.questionsAnswers}\n\n`;
+            extractedText += `  **Transcrição do Vídeo:**\n  ${videoTranscript.transcript}\n\n`;
           }
         }
         
@@ -473,7 +476,6 @@ async function transcribeVideoFile(filePath) {
         const transcription = await openai.audio.transcriptions.create({
           file: fileStream,
           model: 'whisper-1',
-          language: 'pt',
           response_format: 'text',
         });
         
@@ -593,9 +595,9 @@ async function generateQuestionsAnswers(text) {
     let promptContent = '';
     
     if (prompts.qaPrompt.includes('{text}')) {
-      promptContent = prompts.qaPrompt.replace('{text}', textoLimitado);
+      promptContent = prompts.qaPrompt.replace('{text}', textoLimitado) + '\n\nOBRIGATÓRIO: Gere as perguntas e respostas NO MESMO IDIOMA do texto. NUNCA traduza.';
     } else {
-      promptContent = `${prompts.qaPrompt}\n\nTexto do SCORM:\n${textoLimitado}`;
+      promptContent = `${prompts.qaPrompt}\n\nTexto do SCORM:\n${textoLimitado}\n\nGere o Q&A NO MESMO IDIOMA do texto. NUNCA traduza.`;
     }
     
     if (prompts.additionalPrompt && prompts.additionalPrompt.trim() !== '') {
