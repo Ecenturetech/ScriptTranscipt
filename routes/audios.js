@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../db/connection.js';
 import { v4 as uuidv4 } from 'uuid';
 import { applyDictionaryReplacements } from '../services/videoTranscription.js';
+import { generatePDF, generateDOCX } from '../services/exportService.js';
 
 const router = express.Router();
 
@@ -63,6 +64,70 @@ router.get('/:id', async (req, res) => {
   } catch (error) {
     console.error('Erro ao buscar áudio:', error);
     res.status(500).json({ error: 'Erro ao buscar áudio' });
+  }
+});
+
+router.get('/:id/download/pdf', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM audios WHERE id = $1',
+      [req.params.id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Áudio não encontrado' });
+    }
+
+    const row = rows[0];
+    const data = {
+      title: row.file_name,
+      rawText: row.transcript,
+      summary: row.structured_transcript,
+      qa: row.questions_answers,
+      metadata: row.ely_metadata
+    };
+
+    const buffer = await generatePDF(data);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${row.file_name.replace(/\.[^/.]+$/, '')}_output.pdf"`);
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Erro ao gerar PDF:', error);
+    res.status(500).json({ error: 'Erro ao gerar PDF' });
+  }
+});
+
+router.get('/:id/download/docx', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM audios WHERE id = $1',
+      [req.params.id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Áudio não encontrado' });
+    }
+
+    const row = rows[0];
+    const data = {
+      title: row.file_name,
+      rawText: row.transcript,
+      summary: row.structured_transcript,
+      qa: row.questions_answers,
+      metadata: row.ely_metadata
+    };
+
+    const buffer = await generateDOCX(data);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${row.file_name.replace(/\.[^/.]+$/, '')}_output.docx"`);
+    res.send(buffer);
+
+  } catch (error) {
+    console.error('Erro ao gerar DOCX:', error);
+    res.status(500).json({ error: 'Erro ao gerar DOCX' });
   }
 });
 
