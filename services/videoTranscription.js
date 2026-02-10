@@ -6,7 +6,7 @@ import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import { resolve } from 'path';
 import generateQA, { generateEnhancedTranscript, improveTextReadability } from '../ai_qa_generator.js';
-import { enrichTranscriptFromCatalog } from '../culture_enricher.js';
+import { correctTranscriptFromCatalog } from '../catalogCorrector.js';
 import { generateElyMetadata } from './metadataGenerator.js';
 import pool from '../db/connection.js';
 import { getStoragePath } from '../utils/storage.js';
@@ -382,15 +382,15 @@ export async function processMediaTranscript(id, transcriptText, tableName = 'vi
     const tempEnhancedPath = path.join(storagePath, `temp-enhanced-${id}.txt`);
     const tempQAPath = path.join(storagePath, `temp-qa-${id}.txt`);
     
-    fs.writeFileSync(tempTxtPath, transcriptText);
-    
-    const enrichedText = enrichTranscriptFromCatalog(transcriptText);
+    const transcriptCorrected = await correctTranscriptFromCatalog(transcriptText);
+    fs.writeFileSync(tempTxtPath, transcriptCorrected);
     
     let enhancedText = "";
     try {
       await generateEnhancedTranscript(tempTxtPath, tempEnhancedPath);
       enhancedText = fs.readFileSync(tempEnhancedPath, 'utf-8');
       enhancedText = await applyDictionaryReplacements(enhancedText);
+      enhancedText = await correctTranscriptFromCatalog(enhancedText);
     } catch (error) {
       console.error("Erro ao gerar transcrição aprimorada:", error.message);
     }
@@ -407,7 +407,7 @@ export async function processMediaTranscript(id, transcriptText, tableName = 'vi
     let elyMetadata = "";
     try {
       console.log(`[${tableName.toUpperCase()}] Gerando metadados ELY...`);
-      elyMetadata = await generateElyMetadata(transcriptText, fileName);
+      elyMetadata = await generateElyMetadata(transcriptCorrected, fileName);
       elyMetadata = await applyDictionaryReplacements(elyMetadata);
     } catch (error) {
       console.error("Erro ao gerar metadados ELY:", error.message);
@@ -423,7 +423,7 @@ export async function processMediaTranscript(id, transcriptText, tableName = 'vi
 
     await pool.query(
       `UPDATE ${tableName} SET status = $1, transcript = $2, structured_transcript = $3, questions_answers = $4, ely_metadata = $5 WHERE id = $6`,
-      ['completed', transcriptText, enhancedText || null, qaText || null, elyMetadata || null, id]
+      ['completed', transcriptCorrected, enhancedText || null, qaText || null, elyMetadata || null, id]
     );
     
     console.log(`[${tableName.toUpperCase()}] Status atualizado com sucesso para ID: ${id}`);
@@ -438,7 +438,7 @@ export async function processMediaTranscript(id, transcriptText, tableName = 'vi
     
     return {
       success: true,
-      transcript: transcriptText,
+      transcript: transcriptCorrected,
       structuredTranscript: enhancedText,
       questionsAnswers: qaText,
       elyMetadata: elyMetadata

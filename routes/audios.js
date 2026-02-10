@@ -146,7 +146,6 @@ router.post('/', async (req, res) => {
     
     const id = uuidv4();
     
-    // Ensure ely_metadata column exists
     await pool.query(`
       ALTER TABLE audios 
       ADD COLUMN IF NOT EXISTS ely_metadata TEXT
@@ -199,7 +198,6 @@ router.put('/:id', async (req, res) => {
     const values = [];
     let paramIndex = 1;
     
-    // Ensure ely_metadata column exists
     await pool.query(`
       ALTER TABLE audios 
       ADD COLUMN IF NOT EXISTS ely_metadata TEXT
@@ -292,18 +290,15 @@ router.post('/:id/process', async (req, res) => {
       return res.status(400).json({ error: 'Apenas áudios concluídos podem ser processados' });
     }
     
-    // Aplicar substituições do dicionário
     const processedTranscript = row.transcript ? await applyDictionaryReplacements(row.transcript) : null;
     const processedStructuredTranscript = row.structured_transcript ? await applyDictionaryReplacements(row.structured_transcript) : null;
     const processedQuestionsAnswers = row.questions_answers ? await applyDictionaryReplacements(row.questions_answers) : null;
     
-    // Atualizar no banco de dados
     await pool.query(
       `UPDATE audios SET transcript = $1, structured_transcript = $2, questions_answers = $3, updated_at = NOW() WHERE id = $4`,
       [processedTranscript, processedStructuredTranscript, processedQuestionsAnswers, req.params.id]
     );
     
-    // Buscar o registro atualizado
     const { rows: updatedRows } = await pool.query('SELECT * FROM audios WHERE id = $1', [req.params.id]);
     const updatedRow = updatedRows[0];
     

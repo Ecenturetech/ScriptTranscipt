@@ -180,7 +180,7 @@ async function initDatabase() {
     
     console.log('✅ Banco de dados inicializado com sucesso!');
     console.log(`📊 Banco: ${DB_NAME}`);
-    console.log('📋 Tabelas criadas: videos, dictionary_terms, settings');
+    console.log('📋 Tabelas: videos, audios, dictionary_terms, settings, pdfs, scorms, catalogo_produto');
     
   } catch (error) {
     console.error('❌ Erro ao inicializar banco de dados:', error.message);

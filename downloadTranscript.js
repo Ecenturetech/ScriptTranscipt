@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import generateQA, { generateEnhancedTranscript } from "./ai_qa_generator.js";
-import { enrichTranscriptFromCatalog } from "./culture_enricher.js";
+import { correctTranscriptFromCatalog } from "./catalogCorrector.js";
 import { generateElyMetadata } from "./services/metadataGenerator.js";
 import { applyDictionaryReplacements } from "./services/videoTranscription.js";
 import { processVideoFile } from "./services/videoTranscription.js";
@@ -307,16 +307,15 @@ async function downloadTranscript(videoUrl) {
   const tempEnhancedPath = path.join(storagePath, `temp-enhanced-${videoId}.txt`);
   const tempQAPath = path.join(storagePath, `temp-qa-${videoId}.txt`);
 
-  fs.writeFileSync(tempTxtPath, txtFormatted);
-
-  let enrichedText = enrichTranscriptFromCatalog(txtFormatted);
-  enrichedText = await applyDictionaryReplacements(enrichedText);
+  const enrichedText = await correctTranscriptFromCatalog(txtFormatted);
+  fs.writeFileSync(tempTxtPath, enrichedText);
 
   let enhancedText = "";
   try {
     await generateEnhancedTranscript(tempTxtPath, tempEnhancedPath);
     enhancedText = fs.readFileSync(tempEnhancedPath, 'utf-8');
     enhancedText = await applyDictionaryReplacements(enhancedText);
+    enhancedText = await correctTranscriptFromCatalog(enhancedText);
   } catch (error) {
     console.error("Erro ao gerar transcrição aprimorada:", error.message);
   }
@@ -333,7 +332,7 @@ async function downloadTranscript(videoUrl) {
   let elyMetadata = "";
   try {
     console.log(`[VIMEO] Gerando metadados ELY...`);
-    elyMetadata = await generateElyMetadata(txtFormatted, videoTitle || baseFileName);
+    elyMetadata = await generateElyMetadata(enrichedText, videoTitle || baseFileName);
     elyMetadata = await applyDictionaryReplacements(elyMetadata);
   } catch (error) {
     console.error("[VIMEO] Erro ao gerar metadados ELY:", error.message);
@@ -355,7 +354,7 @@ async function downloadTranscript(videoUrl) {
     txtFormatted,
     "",
     "─".repeat(80),
-    "2. TRANSCRIÇÃO ENRIQUECIDA COM PRODUTOS",
+    "2. TRANSCRIÇÃO COM DOSE E VOLUME CALDA (catálogo)",
     "─".repeat(80),
     "",
     enrichedText,
@@ -418,7 +417,7 @@ async function downloadTranscript(videoUrl) {
           [
             'completed',
             fileName,
-            txtFormatted,
+            enrichedText,
             enhancedText || null,
             qaText || null,
             elyMetadata || null,
@@ -444,7 +443,7 @@ async function downloadTranscript(videoUrl) {
             'vimeo',
             videoUrl,
             'completed',
-            txtFormatted,
+            enrichedText,
             enhancedText || null,
             qaText || null,
             elyMetadata || null
@@ -483,7 +482,7 @@ async function downloadTranscript(videoUrl) {
       `${relativePath}/${outputVttName}`
     ],
     storagePath: relativePath,
-    transcript: txtFormatted,
+    transcript: enrichedText,
     structuredTranscript: enhancedText || null,
     questionsAnswers: qaText || null,
     elyMetadata: elyMetadata || null

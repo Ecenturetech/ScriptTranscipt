@@ -15,6 +15,7 @@ import pdfRoutes from './routes/pdfs.js';
 import settingsRoutes from './routes/settings.js';
 import dictionaryRoutes from './routes/dictionary.js';
 import scormRoutes from './routes/scorms.js';
+import catalogoRoutes from './routes/catalogo.js';
 import { getStoragePath } from './utils/storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -33,6 +34,15 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
+// Helper para corrigir encoding de nomes de arquivos (latin1 para utf8)
+function fixEncoding(str) {
+  try {
+    return Buffer.from(str, 'latin1').toString('utf8');
+  } catch (e) {
+    return str;
+  }
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = getStoragePath();
@@ -40,7 +50,9 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    // Tenta corrigir o encoding do nome original antes de extrair a extensão
+    const originalNameFixed = fixEncoding(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(originalNameFixed));
   }
 });
 
@@ -107,6 +119,7 @@ app.use('/api/pdfs', pdfRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/dictionary', dictionaryRoutes);
 app.use('/api/scorms', scormRoutes);
+app.use('/api/catalogo', catalogoRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'API está funcionando' });
@@ -185,7 +198,7 @@ app.post('/api/transcribe/upload', upload.single('video'), async (req, res) => {
       type: 'upload',
       data: {
         filePath: req.file.path,
-        fileName: req.file.originalname
+        fileName: fixEncoding(req.file.originalname)
       }
     });
 
@@ -228,7 +241,7 @@ app.post('/api/transcribe/upload-audio', upload.single('audio'), async (req, res
       type: 'upload-audio',
       data: {
         filePath: req.file.path,
-        fileName: req.file.originalname
+        fileName: fixEncoding(req.file.originalname)
       }
     });
 
@@ -280,7 +293,7 @@ app.post('/api/transcribe/upload-audio-multiple', uploadMultiple.array('audios',
         type: 'upload-audio',
         data: {
           filePath: file.path,
-          fileName: file.originalname
+          fileName: fixEncoding(file.originalname)
         }
       });
       jobIds.push(jobId);
@@ -353,7 +366,7 @@ app.post('/api/transcribe/upload-multiple', uploadMultiple.array('videos', 5), a
         type: 'upload',
         data: {
           filePath: file.path,
-          fileName: file.originalname
+          fileName: fixEncoding(file.originalname)
         }
       });
       jobIds.push(jobId);
@@ -508,7 +521,7 @@ app.post('/api/pdfs/upload-multiple', uploadPDFMultiple.array('pdfs', 5), async 
         type: 'pdf',
         data: {
           filePath: file.path,
-          fileName: file.originalname,
+          fileName: fixEncoding(file.originalname),
           forceVision
         }
       });

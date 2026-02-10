@@ -42,6 +42,7 @@ import { resolve } from 'path';
 import pool from '../db/connection.js';
 import { getStoragePath } from '../utils/storage.js';
 import { applyDictionaryReplacements } from './videoTranscription.js';
+import { correctTranscriptFromCatalog } from '../catalogCorrector.js';
 import { improveTextReadability } from '../ai_qa_generator.js';
 import { generateElyMetadata } from './metadataGenerator.js';
 
@@ -234,7 +235,7 @@ async function generateQuestionsAnswers(text) {
       throw new Error('Prompt de Q&A (qa_prompt) não configurado no banco de dados. Configure através da interface de settings.');
     }
     
-    const textoLimitado = text.substring(0, 30000);
+    const textoLimitado = text.substring(0, 60000);
     
     let promptContent = '';
     
@@ -285,7 +286,7 @@ async function generateStructuredSummary(text) {
       throw new Error('Prompt de transcrição (transcript_prompt) não configurado no banco de dados. Configure através da interface de settings.');
     }
     
-    const textoLimitado = text.substring(0, 30000);
+    const textoLimitado = text.substring(0, 60000);
     
     const model = new ChatOpenAI({
       modelName: "gpt-4o-mini",

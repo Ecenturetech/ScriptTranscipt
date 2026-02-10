@@ -14,7 +14,7 @@ import { applyDictionaryReplacements } from './videoTranscription.js';
 import { generateElyMetadata } from './metadataGenerator.js';
 import { getStoragePath } from '../utils/storage.js';
 import generateQA, { generateEnhancedTranscript } from '../ai_qa_generator.js';
-import { enrichTranscriptFromCatalog } from '../culture_enricher.js';
+import { correctTranscriptFromCatalog } from '../catalogCorrector.js';
 import { splitAudioFile, cleanupChunks } from '../utils/audioSplitter.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -540,15 +540,15 @@ async function processVideoTranscriptOnly(transcriptText) {
     const tempEnhancedPath = path.join(storagePath, `temp-enhanced-${tempId}.txt`);
     const tempQAPath = path.join(storagePath, `temp-qa-${tempId}.txt`);
     
-    fs.writeFileSync(tempTxtPath, transcriptText);
-    
-    const enrichedText = enrichTranscriptFromCatalog(transcriptText);
+    const transcriptCorrected = await correctTranscriptFromCatalog(transcriptText);
+    fs.writeFileSync(tempTxtPath, transcriptCorrected);
     
     let enhancedText = "";
     try {
       await generateEnhancedTranscript(tempTxtPath, tempEnhancedPath);
       enhancedText = fs.readFileSync(tempEnhancedPath, 'utf-8');
       enhancedText = await applyDictionaryReplacements(enhancedText);
+      enhancedText = await correctTranscriptFromCatalog(enhancedText);
     } catch (error) {
       console.error("Erro ao gerar transcrição aprimorada:", error.message);
     }
@@ -570,7 +570,7 @@ async function processVideoTranscriptOnly(transcriptText) {
     }
     
     return {
-      transcript: transcriptText,
+      transcript: transcriptCorrected,
       structuredTranscript: enhancedText,
       questionsAnswers: qaText
     };
@@ -682,7 +682,8 @@ export async function processScormContent(scormId, scormName, coursePath) {
 
     console.log(`[SCORM] Texto extraído (${extractedText.length} caracteres)`);
 
-    const textWithReplacements = await applyDictionaryReplacements(extractedText);
+    let textWithReplacements = await applyDictionaryReplacements(extractedText);
+    textWithReplacements = await correctTranscriptFromCatalog(textWithReplacements);
 
     console.log(`[SCORM] Gerando resumo estruturado...`);
     const structuredSummary = await generateStructuredSummary(textWithReplacements);
@@ -699,7 +700,6 @@ export async function processScormContent(scormId, scormName, coursePath) {
       console.error("[SCORM] Erro ao gerar metadados ELY:", error.message);
     }
 
-    // Garantir que a coluna ely_metadata existe
     await pool.query(`
       ALTER TABLE scorms 
       ADD COLUMN IF NOT EXISTS ely_metadata TEXT

@@ -139,3 +139,21 @@ CREATE INDEX IF NOT EXISTS idx_scorms_scorm_id ON scorms(scorm_id);
 -- Trigger para atualizar updated_at automaticamente em SCORMs
 CREATE TRIGGER update_scorms_updated_at BEFORE UPDATE ON scorms
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Tabela de catálogo de produtos (crop protection)
+CREATE TABLE IF NOT EXISTS catalogo_produto (
+  id SERIAL PRIMARY KEY,
+  nome_produto TEXT,
+  culturas_registradas TEXT,
+  doencas_pragas_plantas_daninhas_controladas TEXT,
+  dose_recomendada TEXT,
+  volume_calda TEXT,
+  classe TEXT,
+  empresa TEXT,
+  pais TEXT
+);
+
+-- Índices para buscas no catálogo
+CREATE INDEX IF NOT EXISTS idx_catalogo_produto_nome ON catalogo_produto(nome_produto);
+CREATE INDEX IF NOT EXISTS idx_catalogo_produto_classe ON catalogo_produto(classe);
+CREATE INDEX IF NOT EXISTS idx_catalogo_produto_empresa ON catalogo_produto(empresa);
