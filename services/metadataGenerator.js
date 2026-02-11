@@ -35,12 +35,28 @@ export async function generateElyMetadata(text, fileName) {
     
     const metadataPrompt = `Você é um especialista em extração de metadados de documentos agronômicos. Extraia os metadados do documento seguindo EXATAMENTE o formato ELY Document especificado abaixo.
 
-Classificação doc_type (use apenas um valor; priorize pela ordem abaixo):
-1. 'product_label': Documentos legais, bulas, rótulos, fichas de segurança/emergência.
-2. 'localized_guidance': Guias de geração de demanda, orientações de posicionamento para equipe/comercial, boletins técnicos por região/safra, materiais que definem ações e prioridades para uma região ou safra específica. Ex.: "Guia de Geração de Demanda", materiais de suporte à venda por região.
-3. 'product_performance_results': Resultados de ensaios, testes de campo, comparativos, relatórios de performance de produtos.
-4. 'agronomy_best_practices': Propostas técnicas de valor (PTV), manuais de cultivo, guias agronômicos que compilam prioridades e práticas de manejo, recomendações técnicas detalhadas, "Coleção Plantar", livros técnicos. Ex.: "Proposta Técnica de Valor", documentos que compilam prioridades e recomendações de híbridos/culturas.
-5. 'marketing_material': Folhetos promocionais, catálogos de produtos, apresentações comerciais (foco em venda, não em recomendações técnicas).
+Classificação doc_type (escolha UM valor da lista abaixo que melhor descreve o documento):
+- product_label: Define as condições de uso aprovadas e legalmente válidas para um produto em um país específico, incluindo doses, métodos de aplicação, culturas e segurança. Atua como limite regulatório para recomendações agronômicas.
+- portfolio_catalog: Lista completa de produtos comercializados em uma região, com híbridos, características e tecnologias. Permite cruzar disponibilidade, status regulatório e estrutura do portfólio.
+- product_positioning: Visão oficial e detalhada de um produto específico, com características técnicas, atributos, vantagens competitivas e posicionamento de mercado.
+- product_guidance: Racional agronômico e orientação técnica principal de um produto/tecnologia em diferentes ambientes, incluindo benefícios, vulnerabilidades e recomendações de manejo.
+- localized_guidance: Recomendações adaptadas regionalmente com base em dados locais, ambiente e requisitos regulatórios.
+- demand_generation_guide: Estrutura operacional e técnica para planejamento e execução de atividades de geração de demanda em campo, incluindo árvores de decisão e padrões agronômicos.
+- product_performance_results: Resultados de desempenho de produtos agrícolas baseados em ensaios de campo, demos ou avaliações comerciais, com dados de eficácia, produtividade e adaptação ambiental.
+- demand_generation_results: Evidências agregadas de desempenho em campo (ex.: produtividade, feedback de agricultores), apoiando discussões técnicas e comerciais.
+- agronomy_best_practices: Conhecimento agronômico geral e práticas de manejo aplicáveis a diferentes culturas, regiões e sistemas produtivos.
+- marketing_material: Materiais focados em comunicação e posicionamento, com propostas de valor e visuais de campanha. Não devem ser usados como referência técnica/regulatória.
+- external_material: Conteúdos de terceiros (relatórios, publicações, estudos públicos) que oferecem contexto complementar e precisam de validação antes de uso em recomendações.
+- scientific_article: Publicações científicas revisadas por pares com evidências empíricas e metodologias validadas para suporte técnico e científico.
+- technical_guidance: Materiais técnicos detalhados com diretrizes seguras de aplicação, manejo integrado e práticas agronômicas específicas, alinhadas a padrões internos.
+- technical_commercial_argumentary: Conteúdo estruturado para suporte técnico-comercial, combinando informações técnicas validadas com argumentos de posicionamento e recomendações de campo.
+- frequent_asked_questions: Compilação de perguntas e respostas sobre temas do portfólio, útil para esclarecimento geral, mas não substitui recomendações técnicas específicas.
+- commercial_policy: Diretrizes comerciais sobre negociação, descontos, pagamentos e políticas de crédito, garantindo alinhamento estratégico e compliance.
+- corporate_policy: Princípios e normas corporativas sobre ética, governança, segurança e sustentabilidade.
+- professional_demand_generation: Estrutura operacional e técnica para execução de ensaios profissionais de geração de demanda com especialistas, incluindo protocolos e avaliação de desempenho.
+- operational_guidance: Instruções operacionais passo a passo para execução de processos, fluxos e atividades em sistemas ou programas.
+- geo_location_reference: Descrição detalhada de regiões e coordenadas geográficas para análises agronômicas localizadas e planejamento estratégico.
+- trial_protocol_reference: Estrutura metodológica padronizada para testes oficiais, incluindo protocolos, critérios técnicos e requisitos operacionais para garantir consistência e comparabilidade de dados.
 
 Specificity:
 - 'subnational_specific': documento focado em região, estado, safra ou zona específica (ex.: Safrinha Subtropical, Norte PR).
@@ -64,8 +80,8 @@ ________________________________________
 • country: [Nome do País em Inglês (Código ISO). Ex: "Brazil (BR)"]
 • subnational_codes: [Se specificity for 'subnational_specific', liste os códigos ISO das regiões (ex: BR-PR). Se for 'country_specific', REPLIQUE o código ISO do país (ex: "BR"). NÃO DEIXE VAZIO se for específico de um país.]
 • specificity: [Use 'subnational_specific', 'country_specific' ou 'global' conforme regras acima.]
-• doc_type: [Um único valor conforme a hierarquia acima.]
-• purpose: [Uma ou duas frases, NO MESMO IDIOMA do documento. Use verbo no início (Compila, Define, Apresenta, Descreve). Inclua: o que o documento faz + contexto (safra/região/cultura quando aplicável) + tema principal. Exemplos: "Compila prioridades e práticas agronômicas para a safra X, com recomendações de manejo e posicionamento de híbridos." / "Define ações de geração de demanda e orientações técnicas para implementação de híbridos na região Y." Seja objetivo; evite começar com "Este documento é..." ou "Este guia visa...".]
+• doc_type: [Um único valor da lista acima.]
+• purpose: [Gere uma descrição baseada no "Expanded Purpose" do tipo de documento identificado, mas adaptada ao conteúdo específico deste documento (produto, cultura, região). Comece com verbo (Define, Lista, Apresenta). 1-2 frases.]
 • language: [código ISO do idioma do documento: pt, es, en.]
 • crop: [apresente a cultura, em inglês e o nome científico entre parênteses. Ex: "acerola (Malpighia emarginata)"]
 • valid_from: ${validFrom}
@@ -76,8 +92,8 @@ Abstract
 
 IMPORTANTE:
 - Título, autores, purpose e abstract: NO MESMO IDIOMA do documento.
-- doc_type: um único valor; guias de geração de demanda = localized_guidance; PTV e compilações de prioridades agronômicas = agronomy_best_practices.
-- purpose: frase objetiva começando por verbo (Compila, Define, Apresenta), com contexto (safra/região/cultura) e tema; evitar "Este guia visa..." ou "Este documento é...".
+- doc_type: um único valor da lista fornecida.
+- purpose: Use as definições "Expanded Purpose" listadas acima como guia para gerar o texto, mas adapte para o contexto específico do documento.
 - country no formato "Country (ISO)".
 - Corrija encoding no título se necessário; resumo com informações técnicas do texto; inclua TODOS os autores. Siga EXATAMENTE o formato visual acima.
 
