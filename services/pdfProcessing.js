@@ -69,6 +69,35 @@ async function getPromptsFromDatabase() {
   };
 }
 
+/** Converte data no formato PDF (ex: D:20240909215223-03'00') para Date ou null */
+function pdfDateToDate(pdfDateStr) {
+  if (!pdfDateStr || typeof pdfDateStr !== 'string' || !pdfDateStr.startsWith('D:')) return null;
+  const m = pdfDateStr.match(/D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?([+-])?(\d{2})?'?(\d{2})?'?/);
+  if (!m) return null;
+  const [, y, mo, d, h = '0', min = '0', s = '0', tzSign, tzH = '0', tzM = '0'] = m;
+  const date = new Date(Date.UTC(+y, +mo - 1, +d, +h, +min, +s));
+  if (tzSign) {
+    const tzOffset = (+tzH) * 60 + (+tzM);
+    date.setMinutes(date.getMinutes() - (tzSign === '+' ? tzOffset : -tzOffset));
+  }
+  return date;
+}
+
+/** Extrai a data de criação dos metadados do PDF (formato YYYY-MM-DD). Retorna null se não encontrar. */
+async function getPDFCreationDateFromFile(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const buffer = fs.readFileSync(filePath);
+    const dados = await pdf(buffer);
+    const raw = dados.info?.CreationDate;
+    if (!raw) return null;
+    const date = raw instanceof Date ? raw : pdfDateToDate(raw);
+    return date ? date.toISOString().split('T')[0] : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function extractRawTextFromPDF(filePath) {
   try {
     if (!fs.existsSync(filePath)) {
@@ -409,13 +438,19 @@ export async function processPDFFile(filePath, fileName, forceVision = false) {
         [extractedText, pdfId_db]
       );
       
-      // Gerar metadados ELY
+      // Data para data_document: prioridade = metadados do PDF (CreationDate), fallback = data de criação do arquivo no disco
       console.log('[PDF] Gerando metadados ELY...');
+      let documentCreatedAt = await getPDFCreationDateFromFile(savedFilePath);
+      if (!documentCreatedAt) {
+        try {
+          const stat = fs.statSync(filePath);
+          documentCreatedAt = stat.birthtime.toISOString().split('T')[0];
+        } catch (_) {}
+      }
       try {
-        elyMetadata = await generateElyMetadata(extractedText, fileName);
+        elyMetadata = await generateElyMetadata(extractedText, fileName, documentCreatedAt);
         elyMetadata = await applyDictionaryReplacements(elyMetadata);
 
-        // Salvar metadados imediatamente para garantir persistência
         try {
             await pool.query(`
                 ALTER TABLE pdfs 

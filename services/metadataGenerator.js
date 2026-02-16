@@ -20,7 +20,7 @@ if (!process.env.OPENAI_API_KEY) {
 const METADATA_TEXT_MAX_LENGTH = 60000;
 const METADATA_TIMEOUT = 60000;
 
-export async function generateElyMetadata(text, fileName) {
+export async function generateElyMetadata(text, fileName, documentCreatedAt = null) {
   try {
     const textoLimitado = text.substring(0, METADATA_TEXT_MAX_LENGTH);
     if (text.length > METADATA_TEXT_MAX_LENGTH) {
@@ -32,6 +32,7 @@ export async function generateElyMetadata(text, fileName) {
     const proximoAno = new Date(hoje);
     proximoAno.setFullYear(proximoAno.getFullYear() + 1);
     const validTo = proximoAno.toISOString().split('T')[0];
+    const dataCriacaoDoc = documentCreatedAt || validFrom;
     
     const metadataPrompt = `Você é um especialista em extração de metadados de documentos agronômicos. Extraia os metadados do documento seguindo EXATAMENTE o formato ELY Document especificado abaixo.
 
@@ -86,6 +87,7 @@ ________________________________________
 • crop: [apresente a cultura, em inglês e o nome científico entre parênteses. Ex: "acerola (Malpighia emarginata)"]
 • valid_from: [Procure no documento por uma data de referência (ex: "Novembro/2025", "Safra 2024/25"). Se encontrar, use o primeiro dia do mês/ano correspondente no formato YYYY-MM-DD. Se não encontrar, use a data atual: ${validFrom}]
 • valid_to: [Se 'valid_from' foi extraído do documento, calcule 1 ano após essa data (ex: 2025-11-01 -> 2026-11-01). Se o documento tiver uma validade específica, use-a. Se usou a data atual em valid_from, use: ${validTo}]
+• data_document: ${dataCriacaoDoc}
 
 Abstract
 [apresente um resumo do documento NO MESMO IDIOMA em que o documento está escrito. O resumo deve focar no CONTEÚDO específico (quais produtos, pragas, resultados, recomendações) e NÃO apenas descrever o tipo de documento (evite iniciar com "Este documento é um manual..."). Seja direto e informativo sobre as informações técnicas.]
@@ -160,6 +162,7 @@ ________________________________________
 • crop: 
 • valid_from: ${new Date().toISOString().split('T')[0]}
 • valid_to: 
+• date_document: 
 `;
   }
 }
