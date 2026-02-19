@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import { downloadTranscript } from './downloadTranscript.js';
 import { processVideoFile } from './services/videoTranscription.js';
 import queue from './services/queue.js';
+import { requireAuth } from './middleware/auth.js';
 import videoRoutes from './routes/videos.js';
 import audioRoutes from './routes/audios.js';
 import pdfRoutes from './routes/pdfs.js';
@@ -113,19 +114,19 @@ const uploadMultiple = multer({
   }
 });
 
-app.use('/api/videos', videoRoutes);
-app.use('/api/audios', audioRoutes);
-app.use('/api/pdfs', pdfRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/dictionary', dictionaryRoutes);
-app.use('/api/scorms', scormRoutes);
-app.use('/api/catalogo', catalogoRoutes);
+app.use('/api/videos', requireAuth, videoRoutes);
+app.use('/api/audios', requireAuth, audioRoutes);
+app.use('/api/pdfs', requireAuth, pdfRoutes);
+app.use('/api/settings', requireAuth, settingsRoutes);
+app.use('/api/dictionary', requireAuth, dictionaryRoutes);
+app.use('/api/scorms', requireAuth, scormRoutes);
+app.use('/api/catalogo', requireAuth, catalogoRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'API está funcionando' });
 });
 
-app.post('/api/transcribe', async (req, res) => {
+app.post('/api/transcribe', requireAuth, async (req, res) => {
   try {
     const { videoUrl, videoUrls } = req.body;
 
@@ -185,7 +186,7 @@ app.post('/api/transcribe', async (req, res) => {
   }
 });
 
-app.post('/api/transcribe/upload', upload.single('video'), async (req, res) => {
+app.post('/api/transcribe/upload', requireAuth, upload.single('video'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ 
@@ -228,7 +229,7 @@ app.post('/api/transcribe/upload', upload.single('video'), async (req, res) => {
   }
 });
 
-app.post('/api/transcribe/upload-audio', upload.single('audio'), async (req, res) => {
+app.post('/api/transcribe/upload-audio', requireAuth, upload.single('audio'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ 
@@ -271,7 +272,7 @@ app.post('/api/transcribe/upload-audio', upload.single('audio'), async (req, res
   }
 });
 
-app.post('/api/transcribe/upload-audio-multiple', uploadMultiple.array('audios', 5), async (req, res) => {
+app.post('/api/transcribe/upload-audio-multiple', requireAuth, uploadMultiple.array('audios', 5), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ 
@@ -344,7 +345,7 @@ const uploadPDFMultiple = multer({
   }
 });
 
-app.post('/api/transcribe/upload-multiple', uploadMultiple.array('videos', 5), async (req, res) => {
+app.post('/api/transcribe/upload-multiple', requireAuth, uploadMultiple.array('videos', 5), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ 
@@ -402,7 +403,7 @@ app.post('/api/transcribe/upload-multiple', uploadMultiple.array('videos', 5), a
   }
 });
 
-app.get('/api/queue/status', (req, res) => {
+app.get('/api/queue/status', requireAuth, (req, res) => {
   try {
     const queueInfo = queue.getQueueInfo();
     res.json({
@@ -417,7 +418,7 @@ app.get('/api/queue/status', (req, res) => {
   }
 });
 
-app.get('/api/queue/jobs', (req, res) => {
+app.get('/api/queue/jobs', requireAuth, (req, res) => {
   try {
     const jobs = queue.getAllJobsStatus();
     res.json({
@@ -456,7 +457,7 @@ app.get('/api/queue/job/:jobId', (req, res) => {
   }
 });
 
-app.get('/api/download/:path(*)', (req, res) => {
+app.get('/api/download/:path(*)', requireAuth, (req, res) => {
   try {
     const requestedPath = req.params.path || '';
     const fullPath = path.join(__dirname, requestedPath);
@@ -497,7 +498,7 @@ app.get('/api/download/:path(*)', (req, res) => {
   }
 });
 
-app.post('/api/pdfs/upload-multiple', uploadPDFMultiple.array('pdfs', 5), async (req, res) => {
+app.post('/api/pdfs/upload-multiple', requireAuth, uploadPDFMultiple.array('pdfs', 5), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ 
