@@ -76,11 +76,28 @@ const upload = multer({
       'audio/ogg',
       'audio/mp4'
     ];
-    
-    if (allowedMimes.includes(file.mimetype)) {
+
+    const allowedExtensions = [
+      '.mp4',
+      '.mpeg',
+      '.mpg',
+      '.mov',
+      '.avi',
+      '.mkv',
+      '.webm',
+      '.mp3',
+      '.wav',
+      '.m4a',
+      '.ogg'
+    ];
+
+    const originalNameFixed = fixEncoding(file.originalname);
+    const ext = path.extname(originalNameFixed).toLowerCase();
+
+    if (allowedMimes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Tipo de arquivo não suportado. Use vídeo (MP4, MOV, AVI...) ou áudio (MP3, WAV, M4A...).'));
+      cb(new Error('Tipo de arquivo não suportado. Use vídeo (MP4, MOV, AVI, MKV, WEBM...) ou áudio (MP3, WAV, M4A, OGG...).'));
     }
   }
 });
@@ -105,11 +122,28 @@ const uploadMultiple = multer({
       'audio/ogg',
       'audio/mp4'
     ];
+
+    const allowedExtensions = [
+      '.mp4',
+      '.mpeg',
+      '.mpg',
+      '.mov',
+      '.avi',
+      '.mkv',
+      '.webm',
+      '.mp3',
+      '.wav',
+      '.m4a',
+      '.ogg'
+    ];
+
+    const originalNameFixed = fixEncoding(file.originalname);
+    const ext = path.extname(originalNameFixed).toLowerCase();
     
-    if (allowedMimes.includes(file.mimetype)) {
+    if (allowedMimes.includes(file.mimetype) || allowedExtensions.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error('Tipo de arquivo não suportado. Use vídeo (MP4, MOV, AVI...) ou áudio (MP3, WAV, M4A...).'));
+      cb(new Error('Tipo de arquivo não suportado. Use vídeo (MP4, MOV, AVI, MKV, WEBM...) ou áudio (MP3, WAV, M4A, OGG...).'));
     }
   }
 });
