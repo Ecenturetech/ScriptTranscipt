@@ -297,7 +297,6 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
         throw new Error('Transcrição retornou vazia');
       }
 
-      // Melhorar legibilidade (pontuação e parágrafos) do texto original
       console.log('Melhorando legibilidade da transcrição original...');
       try {
         transcriptText = await improveTextReadability(transcriptText);
@@ -395,7 +394,6 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
 }
 
 export async function processVideoTranscript(videoId, transcriptText) {
-  // Para compatibilidade, buscamos o fileName do banco se não for passado
   let fileName = 'video.mp4';
   try {
     const res = await pool.query('SELECT file_name FROM videos WHERE id = $1', [videoId]);
@@ -403,6 +401,38 @@ export async function processVideoTranscript(videoId, transcriptText) {
   } catch (e) { console.error('Erro ao buscar filename:', e); }
   
   return processMediaTranscript(videoId, transcriptText, 'videos', fileName);
+}
+
+async function getMediaCreationDate(filePath) {
+  const ffmpegAvailable = await checkFFmpegAvailable();
+  if (!ffmpegAvailable) return null;
+
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) {
+        console.warn(`[FFPROBE] Erro ao ler metadados de ${filePath}:`, err.message);
+        resolve(null);
+        return;
+      }
+      
+      const creationTime = metadata.format?.tags?.creation_time || 
+                           metadata.format?.tags?.date || 
+                           metadata.streams?.[0]?.tags?.creation_time;
+
+      if (creationTime) {
+        try {
+          const date = new Date(creationTime);
+          if (!isNaN(date.getTime())) {
+             resolve(date.toISOString().split('T')[0]);
+             return;
+          }
+        } catch (e) {
+          console.warn('[FFPROBE] Data inválida:', creationTime);
+        }
+      }
+      resolve(null);
+    });
+  });
 }
 
 export async function processMediaTranscript(id, transcriptText, tableName = 'videos', fileName = 'unknown.mp4') {
@@ -436,8 +466,21 @@ export async function processMediaTranscript(id, transcriptText, tableName = 'vi
     
     let elyMetadata = "";
     try {
+      let documentCreatedAt = null;
+      try {
+        const fullPath = path.join(storagePath, fileName);
+        if (fs.existsSync(fullPath)) {
+          documentCreatedAt = await getMediaCreationDate(fullPath);
+          if (documentCreatedAt) {
+            console.log(`[${tableName.toUpperCase()}] Data de criação extraída da mídia: ${documentCreatedAt}`);
+          }
+        }
+      } catch (dateError) {
+        console.warn(`[${tableName.toUpperCase()}] Erro ao extrair data da mídia:`, dateError.message);
+      }
+
       console.log(`[${tableName.toUpperCase()}] Gerando metadados ELY...`);
-      elyMetadata = await generateElyMetadata(transcriptCorrected, fileName);
+      elyMetadata = await generateElyMetadata(transcriptCorrected, fileName, documentCreatedAt);
       elyMetadata = await applyDictionaryReplacements(elyMetadata);
     } catch (error) {
       console.error("Erro ao gerar metadados ELY:", error.message);
@@ -445,7 +488,6 @@ export async function processMediaTranscript(id, transcriptText, tableName = 'vi
     
     console.log(`[${tableName.toUpperCase()}] Atualizando status para 'completed' no banco para ID: ${id}`);
     
-    // Garantir que a coluna ely_metadata existe (segurança)
     await pool.query(`
       ALTER TABLE ${tableName} 
       ADD COLUMN IF NOT EXISTS ely_metadata TEXT

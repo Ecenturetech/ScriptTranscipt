@@ -87,7 +87,7 @@ ________________________________________
 • crop: [apresente a cultura, em inglês e o nome científico entre parênteses. Ex: "acerola (Malpighia emarginata)"]
 • valid_from: [Procure no documento por uma data de referência (ex: "Novembro/2025", "Safra 2024/25"). Se encontrar, use o primeiro dia do mês/ano correspondente no formato YYYY-MM-DD. Se não encontrar, use a data atual: ${validFrom}]
 • valid_to: [Se 'valid_from' foi extraído do documento, calcule 1 ano após essa data (ex: 2025-11-01 -> 2026-11-01). Se o documento tiver uma validade específica, use-a. Se usou a data atual em valid_from, use: ${validTo}]
-• data_document: ${dataCriacaoDoc}
+• date_document: ${dataCriacaoDoc}
 
 Abstract
 [apresente um resumo do documento NO MESMO IDIOMA em que o documento está escrito. O resumo deve focar no CONTEÚDO específico (quais produtos, pragas, resultados, recomendações) e NÃO apenas descrever o tipo de documento (evite iniciar com "Este documento é um manual..."). Seja direto e informativo sobre as informações técnicas.]

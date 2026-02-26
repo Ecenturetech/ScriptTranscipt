@@ -83,7 +83,6 @@ function pdfDateToDate(pdfDateStr) {
   return date;
 }
 
-/** Extrai a data de criação dos metadados do PDF (formato YYYY-MM-DD). Retorna null se não encontrar. */
 async function getPDFCreationDateFromFile(filePath) {
   try {
     if (!fs.existsSync(filePath)) return null;
