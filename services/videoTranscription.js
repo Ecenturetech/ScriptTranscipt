@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 import dotenv from 'dotenv';
 import { resolve } from 'path';
 import generateQA, { generateEnhancedTranscript, improveTextReadability } from '../ai_qa_generator.js';
@@ -28,6 +28,9 @@ const openai = new OpenAI({
 });
 
 const SUPPORTED_FORMATS = ['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'];
+
+/** Formatos que a API aceita na teoria mas às vezes rejeita (ex.: m4a). Converter para MP3 quando FFmpeg estiver disponível. */
+const CONVERT_FOR_COMPATIBILITY = ['m4a', 'mp4', 'oga', 'ogg', 'webm'];
 
 const KNOWN_FFMPEG_PATHS = [
   path.join(os.homedir(), 'AppData', 'Local', 'Microsoft', 'WinGet', 'Packages', 'Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe', 'ffmpeg-8.0.1-full_build', 'bin', 'ffmpeg.exe'),
@@ -64,6 +67,12 @@ async function checkFFmpegAvailable() {
 function isFormatSupported(filePath) {
   const ext = path.extname(filePath).toLowerCase().replace('.', '');
   return SUPPORTED_FORMATS.includes(ext);
+}
+
+/** Retorna true se o formato deve ser convertido para MP3 para evitar rejeição da API (ex.: m4a). */
+function shouldConvertForCompatibility(filePath) {
+  const ext = path.extname(filePath).toLowerCase().replace('.', '');
+  return CONVERT_FOR_COMPATIBILITY.includes(ext);
 }
 
 async function convertToSupportedFormat(inputPath, outputDir, mediaId, isVideo = false) {
@@ -191,10 +200,24 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
     let needsCleanup = false;
     
     try {
-      if (!isFormatSupported(savedFilePath)) {
+      const formatUnsupported = !isFormatSupported(savedFilePath);
+      const compatConversion = shouldConvertForCompatibility(savedFilePath);
+      const ffmpegAvailable = await checkFFmpegAvailable();
+      const needsConversion = formatUnsupported
+        ? true
+        : (compatConversion && ffmpegAvailable);
+
+      if (compatConversion && !ffmpegAvailable) {
+        console.warn('Arquivo em formato que pode ser rejeitado pela API (ex.: m4a). Instale o FFmpeg para conversão automática: https://ffmpeg.org/download.html');
+      }
+
+      if (needsConversion) {
         const fileExtension = path.extname(savedFilePath).toLowerCase();
-        console.log(`Formato ${fileExtension} não é suportado pela API Whisper. Convertendo...`);
-        
+        const reason = formatUnsupported
+          ? `Formato ${fileExtension} não é suportado pela API Whisper`
+          : `Formato ${fileExtension} convertido para MP3 para maior compatibilidade com a API`;
+        console.log(`${reason}. Convertendo...`);
+
         const isVideo = tableName === 'videos';
         convertedFilePath = await convertToSupportedFormat(savedFilePath, storagePath, mediaId, isVideo);
         needsCleanup = true;
@@ -225,10 +248,14 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
         console.log(`Processando chunk ${i + 1}/${chunkPaths.length} (${chunkSizeMB.toFixed(2)} MB)...`);
         
         try {
-          const fileStream = fs.createReadStream(chunkPath);
-          
+          const buffer = await fs.promises.readFile(chunkPath);
+          const baseName = path.basename(chunkPath);
+          const ext = path.extname(baseName).toLowerCase().replace('.', '');
+          const filename = SUPPORTED_FORMATS.includes(ext) ? baseName : `chunk-${i + 1}.mp3`;
+          const fileForApi = await toFile(buffer, filename);
+
           const transcription = await openai.audio.transcriptions.create({
-            file: fileStream,
+            file: fileForApi,
             model: 'whisper-1',
             response_format: 'text',
           });
@@ -246,15 +273,18 @@ export async function processMediaFile(filePath, fileName, tableName = 'videos')
             transcriptParts.push(chunkTranscript);
           }
         } catch (chunkError) {
-          if (chunkError.message && (
-            chunkError.message.includes('25') || 
-            chunkError.message.includes('file too large') ||
-            chunkError.message.includes('size limit')
-          )) {
+          const msg = chunkError.message || '';
+          if (msg.includes('25') || msg.includes('file too large') || msg.includes('size limit')) {
             throw new Error(
               `Arquivo muito grande (${chunkSizeMB.toFixed(2)} MB). ` +
               `A API Whisper tem limite de 25MB. ` +
               `Por favor, instale o FFmpeg para dividir arquivos grandes automaticamente: https://ffmpeg.org/download.html`
+            );
+          }
+          if (msg.includes('Invalid file format') || msg.includes('400')) {
+            throw new Error(
+              `Formato de arquivo inválido para a API Whisper. Formatos aceitos: ${SUPPORTED_FORMATS.join(', ')}. ` +
+              `Se o arquivo é MOV/AVI/MKV, instale o FFmpeg para conversão automática: https://ffmpeg.org/download.html`
             );
           }
           throw chunkError;
