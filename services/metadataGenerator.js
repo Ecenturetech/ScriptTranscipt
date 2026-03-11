@@ -82,7 +82,7 @@ ________________________________________
 • subnational_codes: [Se specificity for 'subnational_specific', liste os códigos ISO das regiões (ex: BR-PR). Se for 'country_specific', REPLIQUE o código ISO do país (ex: "BR"). NÃO DEIXE VAZIO se for específico de um país.]
 • specificity: [Use 'subnational_specific', 'country_specific' ou 'global' conforme regras acima.]
 • doc_type: [Um único valor da lista acima.]
-• purpose: [Identifique o 'doc_type' escolhido acima. Copie a descrição (Expanded Purpose) desse 'doc_type' e use-a como template. Substitua os termos genéricos pelo conteúdo específico deste documento (ex: substitua "um produto" pelo nome do produto real, "região" pelo nome da região, etc). Mantenha a estrutura da frase original.]
+• purpose: [Identifique o 'doc_type' escolhido acima. Copie EXATAMENTE a descrição fornecida na lista acima para esse doc_type. Não faça substituições ou adaptações.]
 • language: [código ISO do idioma do documento: pt, es, en.]
 • crop: [apresente a cultura, em inglês e o nome científico entre parênteses. Ex: "acerola (Malpighia emarginata)"]
 • valid_from: [Procure no documento por uma data de referência (ex: "Novembro/2025", "Safra 2024/25"). Se encontrar, use o primeiro dia do mês/ano correspondente no formato YYYY-MM-DD. Se não encontrar, use a data atual: ${validFrom}]
@@ -95,7 +95,7 @@ Abstract
 IMPORTANTE:
 - Título, autores, purpose e abstract: NO MESMO IDIOMA do documento.
 - doc_type: um único valor da lista fornecida.
-- purpose: Use as definições "Expanded Purpose" listadas acima como guia para gerar o texto, mas adapte para o contexto específico do documento.
+- purpose: Deve ser idêntico à descrição do doc_type escolhido.
 - country no formato "Country (ISO)".
 - Corrija encoding no título se necessário; resumo com informações técnicas do texto; inclua TODOS os autores. Siga EXATAMENTE o formato visual acima.
 
