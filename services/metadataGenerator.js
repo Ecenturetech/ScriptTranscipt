@@ -82,13 +82,8 @@ ________________________________________
 • subnational_codes: [Se specificity for 'subnational_specific', liste os códigos ISO das regiões (ex: BR-PR). Se for 'country_specific', REPLIQUE o código ISO do país (ex: "BR"). NÃO DEIXE VAZIO se for específico de um país.]
 • specificity: [Use 'subnational_specific', 'country_specific' ou 'global' conforme regras acima.]
 • doc_type: [Um único valor da lista acima.]
-<<<<<<< HEAD
 • purpose: [Identifique o 'doc_type' escolhido acima. Copie EXATAMENTE a descrição fornecida na lista acima para esse doc_type. Não faça substituições ou adaptações.]
 • language: [código ISO do idioma do documento: pt, es, en.]
-=======
-• purpose: [Escreva uma frase explicando o objetivo deste documento específico. O texto DEVE ser escrito EXATAMENTE no mesmo idioma do documento (detectado abaixo). Não use o texto das definições acima como modelo, crie uma descrição nova baseada no conteúdo do arquivo.]
-• language: [Detecte o idioma do documento pelo "Texto do documento" abaixo e use o código ISO correspondente: pt, es, en, it, de, fr, etc.]
->>>>>>> 8561e7a4c3ec8f40c01dc3ad39017238f9b1e35b
 • crop: [apresente a cultura, em inglês e o nome científico entre parênteses. Ex: "acerola (Malpighia emarginata)"]
 • valid_from: [Procure no documento por uma data de referência (ex: "Novembro/2025", "Safra 2024/25"). Se encontrar, use o primeiro dia do mês/ano correspondente no formato YYYY-MM-DD. Se não encontrar, use a data atual: ${validFrom}]
 • valid_to: [Se 'valid_from' foi extraído do documento, calcule 1 ano após essa data (ex: 2025-11-01 -> 2026-11-01). Se o documento tiver uma validade específica, use-a. Se usou a data atual em valid_from, use: ${validTo}]
@@ -100,11 +95,7 @@ Abstract
 IMPORTANTE:
 - O idioma de título, autores, purpose e abstract é o idioma que você DETECTAR no bloco "Texto do documento" abaixo. Ignore o fato de este prompt estar em português; a saída deve seguir apenas o idioma do conteúdo do documento.
 - doc_type: um único valor da lista fornecida.
-<<<<<<< HEAD
 - purpose: Deve ser idêntico à descrição do doc_type escolhido.
-=======
-- purpose: Escreva uma descrição original do propósito do documento, no mesmo idioma do conteúdo do documento. NÃO traduza as definições de doc_type fornecidas.
->>>>>>> 8561e7a4c3ec8f40c01dc3ad39017238f9b1e35b
 - country no formato "Country (ISO)".
 - Corrija encoding no título se necessário; resumo com informações técnicas do texto; inclua TODOS os autores. Siga EXATAMENTE o formato visual acima.
 
